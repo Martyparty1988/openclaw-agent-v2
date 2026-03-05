@@ -10,7 +10,8 @@
     "start": "node router.js",
     "dev": "node --watch router.js",
     "web": "npx serve web -p 3000",
-    "check": "node --check router.js && node --check meta-agent.js"
+    "check": "node --check router.js && node --check meta-agent.js",
+    "deploy:check": "node scripts/deploy-preflight.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
