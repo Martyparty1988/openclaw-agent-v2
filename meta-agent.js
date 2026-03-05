@@ -123,14 +123,11 @@ class MetaAgent {
         }
 
         case 'webimprove': {
-          await reply('🌐 *Web-improve spuštěn...*
-_Analyzuji web, generuji vylepšení a commitnu._');
+          await reply(`🌐 *Web-improve spuštěn...*\n_Analyzuji web, generuji vylepšení a commitnu._`);
           setImmediate(async () => {
             try {
               const result = await this.webImprove.run((step) => reply(`⏳ ${step}`));
-              await reply(`✅ *Web-improve dokončen!*
-
-${result}`);
+              await reply(`✅ *Web-improve dokončen!*\n\n${result}`);
             } catch (err) {
               await reply(`❌ *Web-improve selhal:* ${err.message}`);
             }
