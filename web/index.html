@@ -1,830 +1,104 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="cs">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpenClaw — Autonomous AI Agent</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --black: #080b08;
-    --green: #00ff41;
-    --green-dim: #00c032;
-    --green-faint: rgba(0,255,65,0.06);
-    --green-glow: rgba(0,255,65,0.3);
-    --amber: #ffb700;
-    --red: #ff3b3b;
-    --white: #e8ffe8;
-    --grey: #3a4a3a;
-    --mono: 'IBM Plex Mono', monospace;
-    --display: 'Syne', sans-serif;
-  }
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  html { scroll-behavior: smooth; }
-
-  body {
-    background: var(--black);
-    color: var(--white);
-    font-family: var(--mono);
-    font-size: 14px;
-    line-height: 1.6;
-    overflow-x: hidden;
-    cursor: crosshair;
-  }
-
-  /* Scanline overlay */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0,0,0,0.15) 2px,
-      rgba(0,0,0,0.15) 4px
-    );
-    pointer-events: none;
-    z-index: 1000;
-  }
-
-  /* Noise texture */
-  body::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 999;
-    opacity: 0.4;
-  }
-
-  /* ── NAV ── */
-  nav {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.2rem 3rem;
-    border-bottom: 1px solid var(--grey);
-    background: rgba(8,11,8,0.92);
-    backdrop-filter: blur(8px);
-  }
-
-  .nav-logo {
-    font-family: var(--display);
-    font-size: 1.3rem;
-    font-weight: 800;
-    color: var(--green);
-    letter-spacing: -0.02em;
-    text-shadow: 0 0 20px var(--green-glow);
-  }
-
-  .nav-logo span { color: var(--white); opacity: 0.4; }
-
-  .nav-links { display: flex; gap: 2rem; list-style: none; }
-  .nav-links a {
-    color: var(--white);
-    opacity: 0.5;
-    text-decoration: none;
-    font-size: 0.75rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    transition: opacity 0.2s, color 0.2s;
-  }
-  .nav-links a:hover { opacity: 1; color: var(--green); }
-
-  .nav-status {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.7rem;
-    opacity: 0.6;
-  }
-
-  .status-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--green);
-    box-shadow: 0 0 8px var(--green);
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--green); }
-    50% { opacity: 0.4; box-shadow: none; }
-  }
-
-  /* ── HERO ── */
-  #hero {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 8rem 3rem 4rem;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .hero-grid {
-    position: absolute;
-    inset: 0;
-    background-image:
-      linear-gradient(var(--green-faint) 1px, transparent 1px),
-      linear-gradient(90deg, var(--green-faint) 1px, transparent 1px);
-    background-size: 60px 60px;
-    mask-image: radial-gradient(ellipse 80% 60% at 50% 50%, black, transparent);
-  }
-
-  .hero-eyebrow {
-    font-size: 0.7rem;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    color: var(--green);
-    margin-bottom: 1.5rem;
-    opacity: 0;
-    animation: fadeUp 0.6s 0.2s forwards;
-  }
-
-  .hero-title {
-    font-family: var(--display);
-    font-size: clamp(3.5rem, 8vw, 7rem);
-    font-weight: 800;
-    line-height: 0.95;
-    letter-spacing: -0.04em;
-    margin-bottom: 2rem;
-    opacity: 0;
-    animation: fadeUp 0.6s 0.4s forwards;
-  }
-
-  .hero-title .line-green { color: var(--green); text-shadow: 0 0 40px var(--green-glow); }
-  .hero-title .line-dim { opacity: 0.2; }
-
-  .hero-sub {
-    max-width: 480px;
-    font-size: 0.85rem;
-    line-height: 1.8;
-    opacity: 0;
-    animation: fadeUp 0.6s 0.6s forwards;
-    color: var(--white);
-    opacity: 0;
-  }
-
-  .hero-sub.visible { opacity: 0.6; }
-
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: none; }
-  }
-
-  /* Animated fadeUp for hero-sub specifically */
-  .hero-sub { animation: fadeUp 0.6s 0.6s both; }
-
-  .hero-cta {
-    margin-top: 3rem;
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    opacity: 0;
-    animation: fadeUp 0.6s 0.8s forwards;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    font-family: var(--mono);
-    font-size: 0.8rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    text-decoration: none;
-    border: 1px solid;
-    cursor: pointer;
-    transition: all 0.2s;
-    background: none;
-  }
-
-  .btn-primary {
-    border-color: var(--green);
-    color: var(--black);
-    background: var(--green);
-    box-shadow: 0 0 30px var(--green-glow);
-  }
-  .btn-primary:hover {
-    background: transparent;
-    color: var(--green);
-    box-shadow: 0 0 50px var(--green-glow);
-  }
-
-  .btn-ghost {
-    border-color: var(--grey);
-    color: var(--white);
-    opacity: 0.6;
-  }
-  .btn-ghost:hover { border-color: var(--white); opacity: 1; }
-
-  /* Terminal block */
-  .hero-terminal {
-    position: absolute;
-    right: 3rem;
-    top: 50%;
-    transform: translateY(-50%);
-    width: min(480px, 40vw);
-    background: rgba(0,0,0,0.8);
-    border: 1px solid var(--grey);
-    border-radius: 4px;
-    overflow: hidden;
-    opacity: 0;
-    animation: fadeUp 0.8s 1s forwards;
-  }
-
-  .terminal-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.6rem 1rem;
-    background: rgba(255,255,255,0.03);
-    border-bottom: 1px solid var(--grey);
-  }
-
-  .terminal-dot {
-    width: 10px; height: 10px; border-radius: 50%;
-  }
-  .td-red { background: #ff5f57; }
-  .td-yellow { background: #febc2e; }
-  .td-green { background: #28c840; }
-
-  .terminal-title {
-    margin-left: auto;
-    font-size: 0.65rem;
-    opacity: 0.3;
-    letter-spacing: 0.1em;
-  }
-
-  .terminal-body {
-    padding: 1.2rem;
-    font-size: 0.72rem;
-    line-height: 1.9;
-    max-height: 320px;
-    overflow: hidden;
-  }
-
-  .t-green { color: var(--green); }
-  .t-amber { color: var(--amber); }
-  .t-red { color: var(--red); }
-  .t-dim { opacity: 0.35; }
-
-  .cursor {
-    display: inline-block;
-    width: 8px; height: 1em;
-    background: var(--green);
-    animation: blink 1s step-end infinite;
-    vertical-align: text-bottom;
-  }
-
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-  }
-
-  /* ── SECTION COMMON ── */
-  section { padding: 6rem 3rem; }
-
-  .section-label {
-    font-size: 0.65rem;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--green);
-    margin-bottom: 1rem;
-    opacity: 0.7;
-  }
-
-  .section-title {
-    font-family: var(--display);
-    font-size: clamp(2rem, 4vw, 3.5rem);
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    line-height: 1.1;
-    margin-bottom: 1.5rem;
-  }
-
-  /* ── HOW IT WORKS ── */
-  #how {
-    border-top: 1px solid var(--grey);
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4rem;
-    align-items: center;
-  }
-
-  .flow-diagram {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
-
-  .flow-node {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem 1.2rem;
-    border: 1px solid var(--grey);
-    border-bottom: none;
-    position: relative;
-    transition: border-color 0.2s, background 0.2s;
-    cursor: default;
-  }
-
-  .flow-node:first-child { border-radius: 4px 4px 0 0; }
-  .flow-node:last-child { border-bottom: 1px solid var(--grey); border-radius: 0 0 4px 4px; }
-
-  .flow-node:hover {
-    border-color: var(--green);
-    background: var(--green-faint);
-  }
-
-  .flow-node-icon {
-    font-size: 1.2rem;
-    min-width: 2rem;
-    text-align: center;
-  }
-
-  .flow-node-name {
-    font-weight: 500;
-    font-size: 0.85rem;
-    color: var(--green);
-  }
-
-  .flow-node-desc {
-    font-size: 0.72rem;
-    opacity: 0.45;
-    margin-top: 0.1rem;
-  }
-
-  .flow-arrow {
-    text-align: center;
-    color: var(--green);
-    opacity: 0.3;
-    font-size: 0.8rem;
-    padding: 0.2rem 0;
-    letter-spacing: 0.1em;
-  }
-
-  /* ── SELF-IMPROVE ── */
-  #improve {
-    border-top: 1px solid var(--grey);
-    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(0,255,65,0.04), transparent);
-  }
-
-  .improve-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1px;
-    background: var(--grey);
-    border: 1px solid var(--grey);
-    margin-top: 3rem;
-  }
-
-  .improve-step {
-    background: var(--black);
-    padding: 2rem 1.5rem;
-    position: relative;
-    overflow: hidden;
-    transition: background 0.3s;
-  }
-
-  .improve-step:hover { background: var(--green-faint); }
-
-  .improve-step::before {
-    content: attr(data-n);
-    position: absolute;
-    top: -0.5rem;
-    right: 1rem;
-    font-family: var(--display);
-    font-size: 5rem;
-    font-weight: 800;
-    color: var(--green);
-    opacity: 0.04;
-    line-height: 1;
-  }
-
-  .improve-icon { font-size: 1.5rem; margin-bottom: 1rem; }
-  .improve-name {
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--green);
-    margin-bottom: 0.5rem;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-  .improve-desc { font-size: 0.72rem; opacity: 0.45; line-height: 1.7; }
-
-  /* ── LIVE LOG ── */
-  #log {
-    border-top: 1px solid var(--grey);
-  }
-
-  .log-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.5rem;
-  }
-
-  .log-live {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.7rem;
-    color: var(--green);
-    opacity: 0.7;
-  }
-
-  .log-container {
-    border: 1px solid var(--grey);
-    background: rgba(0,0,0,0.5);
-    border-radius: 4px;
-    padding: 1.5rem;
-    font-size: 0.72rem;
-    line-height: 2;
-    min-height: 280px;
-    max-height: 400px;
-    overflow-y: auto;
-  }
-
-  .log-container::-webkit-scrollbar { width: 4px; }
-  .log-container::-webkit-scrollbar-track { background: transparent; }
-  .log-container::-webkit-scrollbar-thumb { background: var(--grey); }
-
-  .log-entry { display: flex; gap: 1.5rem; }
-  .log-time { color: var(--green); opacity: 0.4; min-width: 5rem; }
-  .log-msg { opacity: 0.7; }
-  .log-msg.ok { color: var(--green); opacity: 1; }
-  .log-msg.warn { color: var(--amber); opacity: 1; }
-  .log-msg.err { color: var(--red); opacity: 1; }
-
-  /* ── COMMANDS ── */
-  #commands {
-    border-top: 1px solid var(--grey);
-  }
-
-  .cmd-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 1px;
-    background: var(--grey);
-    border: 1px solid var(--grey);
-    margin-top: 3rem;
-  }
-
-  .cmd-card {
-    background: var(--black);
-    padding: 1.5rem;
-    transition: background 0.2s;
-  }
-  .cmd-card:hover { background: var(--green-faint); }
-
-  .cmd-name {
-    color: var(--green);
-    font-weight: 500;
-    font-size: 0.85rem;
-    margin-bottom: 0.4rem;
-  }
-
-  .cmd-desc { font-size: 0.72rem; opacity: 0.45; line-height: 1.7; }
-
-  /* ── FOOTER ── */
-  footer {
-    border-top: 1px solid var(--grey);
-    padding: 2rem 3rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.7rem;
-    opacity: 0.3;
-  }
-
-  /* ── RESPONSIVE ── */
-  @media (max-width: 900px) {
-    nav { padding: 1rem 1.5rem; }
-    .nav-links { display: none; }
-    #hero { padding: 7rem 1.5rem 3rem; }
-    .hero-terminal { display: none; }
-    #how { grid-template-columns: 1fr; gap: 2rem; }
-    .improve-grid { grid-template-columns: 1fr 1fr; }
-    section { padding: 4rem 1.5rem; }
-    footer { padding: 1.5rem; flex-direction: column; gap: 0.5rem; text-align: center; }
-  }
-
-  @media (max-width: 500px) {
-    .improve-grid { grid-template-columns: 1fr; }
-  }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenClaw Control Panel</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #0e1116; color: #e8f2ff; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 24px; }
+    h1 { margin-bottom: 6px; }
+    .muted { color: #9fb3c8; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .panel { background: #151b24; border: 1px solid #263140; border-radius: 10px; padding: 12px; }
+    input, textarea, button { width: 100%; box-sizing: border-box; border-radius: 8px; border: 1px solid #324256; background: #0f151d; color: #ecf5ff; padding: 10px; }
+    textarea { min-height: 120px; resize: vertical; }
+    button { cursor: pointer; background: #1f7ae0; border: none; font-weight: 700; }
+    button.secondary { background: #2d3642; }
+    .quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    #log { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-height: 320px; max-height: 520px; overflow: auto; }
+    .badge { display: inline-block; background: #1a2636; border: 1px solid #324256; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+    @media (max-width: 900px){ .grid { grid-template-columns: 1fr; } .quick{grid-template-columns: 1fr 1fr;} }
+  </style>
 </head>
 <body>
+  <div class="wrap">
+    <h1>🤖 OpenClaw Control Panel</h1>
+    <p class="muted">Ovládání agenta přes web. Můžeš plánovat úkoly, spouštět exekuci, QA i ukončení všech úloh.</p>
 
-<!-- NAV -->
-<nav>
-  <div class="nav-logo">Open<span>/</span>Claw</div>
-  <ul class="nav-links">
-    <li><a href="#how">Architecture</a></li>
-    <li><a href="#improve">Self-Improve</a></li>
-    <li><a href="#log">Live Log</a></li>
-    <li><a href="#commands">Commands</a></li>
-  </ul>
-  <div class="nav-status">
-    <div class="status-dot"></div>
-    <span>AGENT ONLINE</span>
-  </div>
-</nav>
+    <div class="grid">
+      <div class="panel">
+        <label>User ID</label>
+        <input id="userId" value="web_admin" />
+        <label style="margin-top:10px;display:block;">Příkaz</label>
+        <textarea id="message" placeholder="Např. execute oprav router a zkontroluj testy"></textarea>
+        <div style="margin-top:8px;"><button id="sendBtn">Odeslat</button></div>
+        <div style="margin-top:8px;"><button class="secondary" id="clearBtn">Vymazat výstup</button></div>
 
-<!-- HERO -->
-<section id="hero">
-  <div class="hero-grid"></div>
-
-  <p class="hero-eyebrow">// autonomous ai agent v2.0</p>
-
-  <h1 class="hero-title">
-    <span class="line-green">Self-improving</span><br>
-    <span>AI that runs</span><br>
-    <span class="line-dim">on WhatsApp.</span>
-  </h1>
-
-  <p class="hero-sub">
-    An autonomous agent accessible via WhatsApp and Telegram.
-    It writes code, deploys projects, analyzes data — and refactors its own source,
-    commits to GitHub, and gets better every cycle.
-  </p>
-
-  <div class="hero-cta">
-    <a href="#how" class="btn btn-primary">↓ How it works</a>
-    <a href="https://github.com" class="btn btn-ghost" target="_blank">View on GitHub →</a>
-  </div>
-
-  <!-- Terminal -->
-  <div class="hero-terminal">
-    <div class="terminal-bar">
-      <div class="terminal-dot td-red"></div>
-      <div class="terminal-dot td-yellow"></div>
-      <div class="terminal-dot td-green"></div>
-      <span class="terminal-title">openclaw — bash</span>
-    </div>
-    <div class="terminal-body" id="terminal-body">
-      <div><span class="t-dim">$</span> <span class="t-green">node router.js</span></div>
-      <div id="terminal-lines"></div>
-      <div><span class="cursor"></span></div>
-    </div>
-  </div>
-</section>
-
-<!-- HOW IT WORKS -->
-<section id="how">
-  <div>
-    <p class="section-label">// architecture</p>
-    <h2 class="section-title">Built like a<br>real system.</h2>
-    <p style="opacity:0.45; font-size:0.8rem; line-height:1.9; max-width:380px;">
-      Every message goes through a pipeline: normalized by the Router,
-      interpreted by the MetaAgent, planned by the Planner, executed by the Executor —
-      all with persistent session Memory.
-    </p>
-  </div>
-
-  <div class="flow-diagram">
-    <div class="flow-node">
-      <div class="flow-node-icon">📱</div>
-      <div>
-        <div class="flow-node-name">Router</div>
-        <div class="flow-node-desc">WhatsApp + Telegram → unified message format</div>
+        <h3>Rychlé akce</h3>
+        <div class="quick">
+          <button class="secondary" data-cmd="help">help</button>
+          <button class="secondary" data-cmd="plan Vytvoř release plán">plan</button>
+          <button class="secondary" data-cmd="qa">qa</button>
+          <button class="secondary" data-cmd="tasks">tasks</button>
+          <button class="secondary" data-cmd="done all">ukonči vše</button>
+          <button class="secondary" data-cmd="web improve">web improve</button>
+        </div>
       </div>
-    </div>
-    <div class="flow-node">
-      <div class="flow-node-icon">🧠</div>
-      <div>
-        <div class="flow-node-name">MetaAgent</div>
-        <div class="flow-node-desc">Parses commands, routes to specialist sub-agents</div>
-      </div>
-    </div>
-    <div class="flow-node">
-      <div class="flow-node-icon">📋</div>
-      <div>
-        <div class="flow-node-name">Planner</div>
-        <div class="flow-node-desc">Decomposes task into structured JSON execution plan</div>
-      </div>
-    </div>
-    <div class="flow-node">
-      <div class="flow-node-icon">⚙️</div>
-      <div>
-        <div class="flow-node-name">Executor</div>
-        <div class="flow-node-desc">Agentic loop: bash · read/write files · HTTP fetch</div>
-      </div>
-    </div>
-    <div class="flow-node">
-      <div class="flow-node-icon">💾</div>
-      <div>
-        <div class="flow-node-name">Memory</div>
-        <div class="flow-node-desc">Per-user session, persists across restarts</div>
-      </div>
-    </div>
-    <div class="flow-node">
-      <div class="flow-node-icon">🧬</div>
-      <div>
-        <div class="flow-node-name">SelfImprove</div>
-        <div class="flow-node-desc">Reads own code → refactors → tests → git push</div>
+
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong>Výstup agenta</strong><span class="badge" id="status">idle</span>
+        </div>
+        <div id="log"></div>
       </div>
     </div>
   </div>
-</section>
 
-<!-- SELF-IMPROVE -->
-<section id="improve">
-  <p class="section-label">// self-improve cycle</p>
-  <h2 class="section-title">The agent that<br>rewrites itself.</h2>
+  <script>
+    const statusEl = document.getElementById('status');
+    const logEl = document.getElementById('log');
+    const userIdEl = document.getElementById('userId');
+    const msgEl = document.getElementById('message');
 
-  <div class="improve-grid">
-    <div class="improve-step" data-n="1">
-      <div class="improve-icon">🔍</div>
-      <div class="improve-name">Analyze</div>
-      <div class="improve-desc">Reads all source files. Claude scores code quality 1–10 and lists concrete issues by severity.</div>
-    </div>
-    <div class="improve-step" data-n="2">
-      <div class="improve-icon">✏️</div>
-      <div class="improve-name">Refactor</div>
-      <div class="improve-desc">Generates improved versions of high-priority files. Keeps .bak backups before overwriting.</div>
-    </div>
-    <div class="improve-step" data-n="3">
-      <div class="improve-icon">🧪</div>
-      <div class="improve-name">Test</div>
-      <div class="improve-desc">Runs npm test and syntax checks. Only applies changes if tests pass.</div>
-    </div>
-    <div class="improve-step" data-n="4">
-      <div class="improve-icon">📦</div>
-      <div class="improve-name">Commit</div>
-      <div class="improve-desc">git add → commit "🤖 self-improve: ..." → push origin main. Fully autonomous.</div>
-    </div>
-  </div>
-</section>
+    function append(text) {
+      const now = new Date().toLocaleTimeString();
+      logEl.textContent += `[${now}] ${text}\n\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
 
-<!-- LIVE LOG -->
-<section id="log">
-  <div class="log-header">
-    <div>
-      <p class="section-label">// activity log</p>
-      <h2 class="section-title" style="font-size:2rem;">Live agent output.</h2>
-    </div>
-    <div class="log-live">
-      <div class="status-dot"></div>
-      SIMULATED · replace with your WebSocket
-    </div>
-  </div>
+    async function sendCommand(cmdOverride) {
+      const text = cmdOverride || msgEl.value.trim();
+      if (!text) return;
 
-  <div class="log-container" id="log-container">
-    <!-- populated by JS -->
-  </div>
-</section>
+      statusEl.textContent = 'running';
+      append(`> ${text}`);
 
-<!-- COMMANDS -->
-<section id="commands">
-  <p class="section-label">// whatsapp commands</p>
-  <h2 class="section-title">Talk to it<br>like a developer.</h2>
+      try {
+        const response = await fetch('/api/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: userIdEl.value.trim(), text }),
+        });
 
-  <div class="cmd-grid">
-    <div class="cmd-card">
-      <div class="cmd-name">&gt; analyze &lt;what&gt;</div>
-      <div class="cmd-desc">Analyze a file or codebase. No changes made — pure analysis with actionable findings.</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">&gt; plan &lt;task&gt;</div>
-      <div class="cmd-desc">Generate a structured step-by-step execution plan for any task.</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">&gt; execute &lt;task&gt;</div>
-      <div class="cmd-desc">Run the agent async. You get an immediate ack, then a notification when it's done.</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">&gt; improve</div>
-      <div class="cmd-desc">Trigger the full self-improve cycle: analyze → refactor → test → git push.</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">&gt; chat &lt;message&gt;</div>
-      <div class="cmd-desc">Free-form conversation with full session memory across messages.</div>
-    </div>
-    <div class="cmd-card">
-      <div class="cmd-name">&gt; reset</div>
-      <div class="cmd-desc">Clear your session memory. Start a fresh conversation context.</div>
-    </div>
-  </div>
-</section>
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          append(`ERROR: ${data.error || 'Unknown error'}`);
+        } else {
+          (data.replies || []).forEach((msg) => append(msg));
+        }
+      } catch (error) {
+        append(`NETWORK ERROR: ${error.message}`);
+      } finally {
+        statusEl.textContent = 'idle';
+      }
+    }
 
-<!-- FOOTER -->
-<footer>
-  <span>OpenClaw Agent v2.0 — built autonomously</span>
-  <span>WhatsApp · Telegram · GitHub</span>
-</footer>
-
-<script>
-// ── Terminal animation ────────────────────────────────────────────────────────
-const termLines = [
-  { t: 300,  text: '🚀 OpenClaw Router starting...', cls: 'ok' },
-  { t: 700,  text: '📱 WhatsApp: waiting for QR scan...', cls: '' },
-  { t: 1400, text: '✅ WhatsApp connected.', cls: 'ok' },
-  { t: 1900, text: '✅ Telegram bot started.', cls: 'ok' },
-  { t: 2600, text: '[WA][+420***] execute fix bug in solartrack', cls: '' },
-  { t: 3000, text: '🧠 MetaAgent → CodeAgent', cls: '' },
-  { t: 3400, text: '📋 Planner: 4 steps generated', cls: '' },
-  { t: 3900, text: '🔧 bash(`cat solartrack/app.js`)', cls: '' },
-  { t: 4500, text: '🔧 write_file(`solartrack/app.js`)', cls: '' },
-  { t: 5100, text: '🔧 bash(`npm test`)', cls: '' },
-  { t: 5700, text: '✅ Tests passed. Notifying user.', cls: 'ok' },
-  { t: 6500, text: '[WA][+420***] improve', cls: '' },
-  { t: 6900, text: '🧬 SelfImprove: reading 6 source files...', cls: '' },
-  { t: 7500, text: '📊 Code score: 7/10 — 3 issues found', cls: 'warn' },
-  { t: 8200, text: '✏️  Refactoring executor.js...', cls: '' },
-  { t: 9000, text: '🧪 Tests: 3/3 passed', cls: 'ok' },
-  { t: 9600, text: '📦 git commit "🤖 self-improve: executor.js"', cls: '' },
-  { t:10200, text: '📦 git push origin main → OK', cls: 'ok' },
-  { t:11000, text: '✅ Self-improve done. Agent upgraded.', cls: 'ok' },
-];
-
-const termEl = document.getElementById('terminal-lines');
-termLines.forEach(({ t, text, cls }) => {
-  setTimeout(() => {
-    const div = document.createElement('div');
-    div.className = cls === 'ok' ? 't-green' : cls === 'warn' ? 't-amber' : cls === 'err' ? 't-red' : 't-dim';
-    div.textContent = text;
-    termEl.appendChild(div);
-    termEl.parentElement.scrollTop = termEl.parentElement.scrollHeight;
-  }, t);
-});
-
-// ── Live log simulation ───────────────────────────────────────────────────────
-const logEntries = [
-  { time: '09:14:02', msg: 'Agent started. WhatsApp + Telegram connected.', cls: 'ok' },
-  { time: '09:14:45', msg: '[+420***] execute oprav bug v solartrack', cls: '' },
-  { time: '09:14:46', msg: 'CodeAgent activated', cls: '' },
-  { time: '09:14:47', msg: 'bash(`cat solartrack/src/app.js`) → 847 lines', cls: '' },
-  { time: '09:14:52', msg: 'write_file(`solartrack/src/app.js`) → saved', cls: '' },
-  { time: '09:14:58', msg: 'bash(`npm test`) → 12 passed, 0 failed', cls: 'ok' },
-  { time: '09:15:01', msg: 'Notified user: ✅ Bug fixed', cls: 'ok' },
-  { time: '10:02:11', msg: '[tg_9281***] improve', cls: '' },
-  { time: '10:02:12', msg: 'SelfImprove: reading 6 source files', cls: '' },
-  { time: '10:02:18', msg: 'Claude analysis: score 7/10 — 3 issues', cls: 'warn' },
-  { time: '10:02:31', msg: 'Refactoring executor.js → improved error handling', cls: '' },
-  { time: '10:02:44', msg: 'Tests: 3/3 passed', cls: 'ok' },
-  { time: '10:02:46', msg: 'git commit "🤖 self-improve: executor.js"', cls: '' },
-  { time: '10:02:49', msg: 'git push origin main → OK', cls: 'ok' },
-  { time: '10:02:49', msg: 'Self-improve cycle complete.', cls: 'ok' },
-];
-
-const logEl = document.getElementById('log-container');
-
-function addLogEntry(entry) {
-  const div = document.createElement('div');
-  div.className = 'log-entry';
-  div.innerHTML = `<span class="log-time">${entry.time}</span><span class="log-msg ${entry.cls}">${entry.msg}</span>`;
-  logEl.appendChild(div);
-  logEl.scrollTop = logEl.scrollHeight;
-}
-
-// Show initial entries instantly
-logEntries.forEach(e => addLogEntry(e));
-
-// Simulate new live entries
-const liveEntries = [
-  { msg: 'Heartbeat OK — all systems nominal', cls: '' },
-  { msg: '[+420***] analyze sub-agents/executor.js', cls: '' },
-  { msg: 'DataAgent activated', cls: '' },
-  { msg: 'read_file(`sub-agents/executor.js`) → 189 lines', cls: '' },
-  { msg: 'Analysis complete. 2 suggestions generated.', cls: 'ok' },
-  { msg: 'Memory GC: 3 sessions pruned (>50 messages)', cls: 'warn' },
-];
-
-let liveIdx = 0;
-setInterval(() => {
-  if (liveIdx >= liveEntries.length) liveIdx = 0;
-  const now = new Date();
-  const time = [now.getHours(), now.getMinutes(), now.getSeconds()]
-    .map(n => String(n).padStart(2, '0')).join(':');
-  addLogEntry({ time, ...liveEntries[liveIdx++] });
-}, 3500);
-
-// ── Scroll reveal ─────────────────────────────────────────────────────────────
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(e => {
-    if (e.isIntersecting) e.target.style.opacity = '1';
-  });
-}, { threshold: 0.1 });
-
-document.querySelectorAll('.improve-step, .cmd-card, .flow-node').forEach(el => {
-  el.style.transition = 'opacity 0.5s, background 0.2s';
-  el.style.opacity = '0';
-  observer.observe(el);
-});
-</script>
+    document.getElementById('sendBtn').addEventListener('click', () => sendCommand());
+    document.getElementById('clearBtn').addEventListener('click', () => { logEl.textContent = ''; });
+    document.querySelectorAll('[data-cmd]').forEach((btn) => {
+      btn.addEventListener('click', () => sendCommand(btn.dataset.cmd));
+    });
+  </script>
 </body>
 </html>

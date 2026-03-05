@@ -1,16 +1,16 @@
 // sub-agents/executor.js
 // Runs the agentic loop with real tools: bash, file I/O, HTTP.
 
-const Anthropic = require('@anthropic-ai/sdk');
 const { exec } = require('child_process');
 const fs = require('fs').promises;
 const https = require('https');
 const http = require('http');
 const path = require('path');
 const util = require('util');
+const AnthropicClient = require('../lib/anthropic-client');
 
 const execAsync = util.promisify(exec);
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new AnthropicClient();
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ class Executor {
     const messages = [{ role: 'user', content: task }];
 
     for (let i = 0; i < maxIter; i++) {
-      const res = await client.messages.create({
+      const res = await client.createMessage({
         model: MODEL,
         max_tokens: 4096,
         system,
@@ -173,7 +173,7 @@ class Executor {
       { role: 'user', content: message },
     ];
 
-    const res = await client.messages.create({
+    const res = await client.createMessage({
       model: MODEL,
       max_tokens: 1024,
       system: AGENT_SYSTEMS.general,

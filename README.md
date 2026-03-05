@@ -1,77 +1,28 @@
-# 🤖 OpenClaw — Self-Improving AI Agent
+# OpenClaw Agent v2
 
-WhatsApp + Telegram → Meta-Agent → Planner / Executor / Memory / SelfImprove → GitHub
+Multi-agent orchestrator (Planner, Executor, Memory, SelfImprove, WebImprove, QA, TaskManager) with a new web control panel.
 
-## Architecture
-
-```
-WhatsApp ──┐
-           ├──► router.js ──► meta-agent.js
-Telegram ──┘                      │
-                     ┌────────────┼────────────┬──────────────┐
-                     ▼            ▼             ▼              ▼
-                 planner      executor        memory      self-improve
-                     │            │             │              │
-                     │      bash/files/       JSON          analyze
-                     │      fetch_url         files         refactor
-                     └────────────┘             │            test
-                                           agent-memory/   git commit
-                                           *.json          → GitHub
-```
-
-## Files
-
-```
-router.js               ← Entry point. WhatsApp + Telegram.
-meta-agent.js           ← Orchestrator. Parses commands, routes to sub-agents.
-sub-agents/
-  planner.js            ← Turns tasks into structured JSON execution plans.
-  executor.js           ← Agentic loop: bash, read/write files, HTTP.
-  memory.js             ← Per-user session persistence (JSON files).
-  self-improve.js       ← Reads own code → refactors → tests → git commit.
-agent-memory/           ← Auto-created. One JSON file per user.
-```
-
-## Setup
+## Start
 
 ```bash
 npm install
-cp .env.example .env   # fill in ANTHROPIC_API_KEY
-npm start              # scan QR code to connect WhatsApp
+npm start
 ```
 
-## Commands
+Then open `http://localhost:3000`.
 
-| Command | Popis |
-|---|---|
-| `analyze <co>` | Analyzuj soubor nebo kód |
-| `plan <úkol>` | Vytvoř plán |
-| `execute <úkol>` | Spusť async, notifikace po dokončení |
-| `improve` | 🧬 Self-improve: analyze → refactor → test → git push |
-| `chat <zpráva>` | Volná konverzace s pamětí |
-| `reset` | Smaž session paměť |
+## New features
 
-## Self-Improve Cycle (`improve`)
+- **Web Control Panel**: send commands, run quick actions, watch responses in real time.
+- **QA Agent** (`qa`): runs built-in syntax and health checks.
+- **TaskManager Agent** (`tasks`, `done all`): stores task history and allows closing all tasks.
+- **Improved MetaAgent routing**: includes new commands and cleaner help output.
 
-1. Přečte všechny zdrojové soubory agenta
-2. Claude ohodnotí kvalitu kódu (1–10) a najde problémy
-3. Vygeneruje opravené verze souborů
-4. Spustí testy (`npm test` + syntax check)
-5. Zapíše opravené soubory (`.bak` zálohy)
-6. `git add → commit → push origin main`
+## API
 
-## Git Setup
+- `POST /api/message`
+  - body: `{ "userId": "web_admin", "text": "qa" }`
+  - response: `{ "ok": true, "replies": ["..."] }`
 
-```bash
-git init
-git remote add origin https://github.com/your/repo.git
-git config user.email "agent@openclaw.ai"
-git config user.name "OpenClaw Agent"
-```
-
-## Platformy
-
-- **WhatsApp** — Baileys, scan QR kódu
-- **Telegram** — nastav `TELEGRAM_TOKEN` v `.env`
-
-Obě platformy sdílí stejnou paměť a agenty. Telegram user ID má prefix `tg_`.
+- `GET /health`
+  - response: `{ "ok": true, "service": "openclaw-web-control" }`

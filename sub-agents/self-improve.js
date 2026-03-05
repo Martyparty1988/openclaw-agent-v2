@@ -2,14 +2,14 @@
 // The agent that reads its own source code, finds improvements,
 // refactors, runs tests, and commits to GitHub.
 
-const Anthropic = require('@anthropic-ai/sdk');
 const { exec } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const util = require('util');
+const AnthropicClient = require('../lib/anthropic-client');
 
 const execAsync = util.promisify(exec);
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new AnthropicClient();
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
 
 // Files the agent is allowed to read and potentially improve
@@ -45,7 +45,7 @@ async function analyzeCode(onStep) {
 
   onStep('Analyzuji kvalitu kódu...');
 
-  const res = await client.messages.create({
+  const res = await client.createMessage({
     model: MODEL,
     max_tokens: 2048,
     system: `You are a senior software engineer doing a code review of an AI agent system.
@@ -86,7 +86,7 @@ async function generateFixes(analysis, onStep) {
       continue;
     }
 
-    const res = await client.messages.create({
+    const res = await client.createMessage({
       model: MODEL,
       max_tokens: 3000,
       system: `You are refactoring agent code. Return ONLY the complete improved file content — no explanation, no markdown fences.`,

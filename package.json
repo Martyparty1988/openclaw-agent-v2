@@ -1,7 +1,12 @@
 {
-  "name": "node20-fix",
-  "version": "1.0.0",
+  "name": "openclaw-agent-v2",
+  "version": "1.1.0",
+  "description": "Self-improving multi-agent assistant with web control panel",
   "engines": {
     "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check meta-agent.js && node --check sub-agents/executor.js && node --check sub-agents/planner.js && node --check sub-agents/self-improve.js && node --check sub-agents/web-improve.js && node --check server.js"
   }
 }

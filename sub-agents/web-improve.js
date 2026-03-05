@@ -2,14 +2,14 @@
 // Agent that reads its own website, finds UX/content improvements,
 // rewrites sections, and commits to GitHub — fully autonomous.
 
-const Anthropic = require('@anthropic-ai/sdk');
 const { exec } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const util = require('util');
+const AnthropicClient = require('../lib/anthropic-client');
 
 const execAsync = util.promisify(exec);
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new AnthropicClient();
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
 
 const WEB_DIR = path.resolve(process.env.WEB_DIR || './web');
@@ -25,7 +25,7 @@ async function auditWebsite(onStep) {
 
   onStep('🔍 Claude analyzuje UX, obsah a kód...');
 
-  const res = await client.messages.create({
+  const res = await client.createMessage({
     model: MODEL,
     max_tokens: 2048,
     system: `You are a senior UX engineer and frontend developer auditing a website.
@@ -71,7 +71,7 @@ async function generateImprovedHtml(audit, currentHtml, onStep) {
   const copyList = audit.copy_improvements.map(c => `"${c.current}" → "${c.improved}"`).join('\n');
   const missingSections = audit.missing_sections.join(', ');
 
-  const res = await client.messages.create({
+  const res = await client.createMessage({
     model: MODEL,
     max_tokens: 8000,
     system: `You are a senior frontend developer improving a website.

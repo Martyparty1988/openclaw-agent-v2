@@ -1,9 +1,9 @@
 // sub-agents/planner.js
 // Turns a task description into a structured execution plan using Claude.
 
-const Anthropic = require('@anthropic-ai/sdk');
+const AnthropicClient = require('../lib/anthropic-client');
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new AnthropicClient();
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
 
 const SYSTEM = `You are a Planner agent. Your only job is to decompose tasks into clear, executable steps.
@@ -13,7 +13,7 @@ Be specific — each step should map to a concrete tool call or action.`;
 
 class Planner {
   async create(userId, task) {
-    const response = await client.messages.create({
+    const response = await client.createMessage({
       model: MODEL,
       max_tokens: 1024,
       system: SYSTEM,
