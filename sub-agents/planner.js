@@ -4,7 +4,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
+const MODEL = process.env.OPENAI_MODEL || process.env.CLAUDE_MODEL || 'gpt-4.1';
 
 const SYSTEM = `You are a Planner agent. Your only job is to decompose tasks into clear, executable steps.
 Always return valid JSON only — no markdown, no explanation outside the JSON.

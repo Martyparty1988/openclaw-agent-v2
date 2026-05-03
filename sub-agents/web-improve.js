@@ -10,7 +10,7 @@ const util = require('util');
 
 const execAsync = util.promisify(exec);
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
+const MODEL = process.env.OPENAI_MODEL || process.env.CLAUDE_MODEL || 'gpt-4.1';
 
 const WEB_DIR = path.resolve(process.env.WEB_DIR || './web');
 const WORKDIR = process.env.AGENT_WORKDIR || process.cwd();

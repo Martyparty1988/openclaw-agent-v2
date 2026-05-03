@@ -10,7 +10,7 @@ const util = require('util');
 
 const execAsync = util.promisify(exec);
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
+const MODEL = process.env.OPENAI_MODEL || process.env.CLAUDE_MODEL || 'gpt-4.1';
 
 // Files the agent is allowed to read and potentially improve
 const AGENT_FILES = [

@@ -21,7 +21,7 @@ function loadDotEnv() {
 loadDotEnv();
 
 const required = ['ANTHROPIC_API_KEY', 'WA_PHONE_NUMBER'];
-const optional = ['TELEGRAM_TOKEN', 'GIT_TOKEN', 'CLAUDE_MODEL', 'GIT_BRANCH', 'AGENT_WORKDIR', 'MEMORY_DIR'];
+const optional = ['TELEGRAM_TOKEN', 'GIT_TOKEN', 'OPENAI_MODEL', 'CLAUDE_MODEL', 'GIT_BRANCH', 'AGENT_WORKDIR', 'MEMORY_DIR'];
 
 const missing = required.filter((key) => !process.env[key] || !String(process.env[key]).trim());
 

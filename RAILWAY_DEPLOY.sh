@@ -81,6 +81,7 @@ WA_PHONE_NUMBER       = 420777123456          # BEZ + a mezer, s předvolbou!
 
 # Volitelné:
 TELEGRAM_TOKEN        = 123456:ABCdef...      # nech prázdné pokud nechceš Telegram
+OPENAI_MODEL          = gpt-4.1
 CLAUDE_MODEL          = claude-opus-4-5
 GIT_BRANCH            = main
 AGENT_WORKDIR         = /app
