@@ -8,7 +8,7 @@
 # ──────────────────────────────────────────────────────────────
 # - GitHub účet                     → github.com
 # - Railway účet                    → railway.com (free tier stačí)
-# - Anthropic API klíč              → console.anthropic.com
+# - OpenAI API klíč              → platform.openai.com
 # - (volitelně) Telegram bot token  → @BotFather na Telegramu
 # - Telefonní číslo s WhatsApp      → tvoje vlastní číslo
 
@@ -76,12 +76,12 @@ git push -u origin main
 # → Klikni na service → záložka "Variables" → Add Variable
 #
 # Povinné:
-ANTHROPIC_API_KEY     = sk-ant-xxxxxxxxxxxxxxxxxxxx
+OPENAI_API_KEY        = sk-proj-xxxxxxxxxxxxxxxxxxxx
 WA_PHONE_NUMBER       = 420777123456          # BEZ + a mezer, s předvolbou!
 
 # Volitelné:
 TELEGRAM_TOKEN        = 123456:ABCdef...      # nech prázdné pokud nechceš Telegram
-CLAUDE_MODEL          = claude-opus-4-5
+OPENAI_MODEL          = gpt-4.1
 GIT_BRANCH            = main
 AGENT_WORKDIR         = /app
 WEB_DIR               = /app/web
