@@ -40,6 +40,18 @@ cp .env.example .env   # fill in ANTHROPIC_API_KEY
 npm start              # scan QR code to connect WhatsApp
 ```
 
+### Free LLM API (OpenRouter)
+
+Pokud chceš používat free modely místo Claude:
+
+```bash
+export LLM_PROVIDER=openrouter
+export OPENROUTER_API_KEY=sk-or-...
+export OPENROUTER_MODEL=meta-llama/llama-3.3-8b-instruct:free
+```
+
+Pak agent používá OpenRouter Chat Completions API pro `plan`, `execute`, `analyze` i `chat`.
+
 ## Quick Deploy (Railway)
 
 1. Prepare env file and validate configuration:
