@@ -36,7 +36,7 @@ agent-memory/           ← Auto-created. One JSON file per user.
 
 ```bash
 npm install
-cp .env.example .env   # fill in ANTHROPIC_API_KEY
+cp .env.example .env   # fill in OPENAI_API_KEY
 npm start              # scan QR code to connect WhatsApp
 ```
 
@@ -52,7 +52,7 @@ npm run deploy:check
 
 2. Push the repo to GitHub and connect it in Railway.
 3. In Railway Variables set at minimum:
-   - `ANTHROPIC_API_KEY`
+   - `OPENAI_API_KEY`
    - `WA_PHONE_NUMBER` (without `+`, e.g. `420777123456`)
 4. Optional: add `TELEGRAM_TOKEN` and `GIT_TOKEN` for Telegram + self-improve push.
 5. Deploy using `railway.json` (`startCommand: node router.js`).

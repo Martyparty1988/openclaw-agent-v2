@@ -1,7 +1,7 @@
 {
   "name": "openclaw-agent",
   "version": "2.1.1",
-  "description": "Self-improving autonomous AI agent — WhatsApp + Telegram + Web",
+  "description": "Self-improving autonomous AI agent \u2014 WhatsApp + Telegram + Web",
   "main": "router.js",
   "engines": {
     "node": ">=20"
@@ -14,10 +14,10 @@
     "deploy:check": "node scripts/deploy-preflight.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.30.0",
     "@builderbot/bot": "^1.2.0",
     "@builderbot/provider-baileys": "^1.2.0",
     "dotenv": "^16.0.0",
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^0.66.0",
+    "openai": "^4.104.0"
   }
 }
