@@ -2,15 +2,13 @@
 // Agent that reads its own website, finds UX/content improvements,
 // rewrites sections, and commits to GitHub — fully autonomous.
 
-const Anthropic = require('@anthropic-ai/sdk');
 const { exec } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const util = require('util');
 
 const execAsync = util.promisify(exec);
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || process.env.CLAUDE_MODEL || 'gpt-4.1';
+const { createMessage } = require('./llm');
 
 const WEB_DIR = path.resolve(process.env.WEB_DIR || './web');
 const WORKDIR = process.env.AGENT_WORKDIR || process.cwd();
@@ -25,9 +23,8 @@ async function auditWebsite(onStep) {
 
   onStep('🔍 Claude analyzuje UX, obsah a kód...');
 
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 2048,
+  const res = await createMessage({
+    maxTokens: 2048,
     system: `You are a senior UX engineer and frontend developer auditing a website.
 Find concrete improvements in: content clarity, missing sections, copy quality, HTML/CSS bugs, accessibility, performance, SEO.
 Return JSON only: {
@@ -47,7 +44,7 @@ Return JSON only: {
     }],
   });
 
-  const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  const text = res.text;
   try {
     return JSON.parse(text.replace(/```json|```/g, '').trim());
   } catch {
@@ -71,9 +68,8 @@ async function generateImprovedHtml(audit, currentHtml, onStep) {
   const copyList = audit.copy_improvements.map(c => `"${c.current}" → "${c.improved}"`).join('\n');
   const missingSections = audit.missing_sections.join(', ');
 
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 8000,
+  const res = await createMessage({
+    maxTokens: 8000,
     system: `You are a senior frontend developer improving a website.
 Apply the requested fixes and return the COMPLETE improved HTML file — nothing else.
 No markdown fences, no explanation. Just the full HTML.

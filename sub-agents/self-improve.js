@@ -2,15 +2,13 @@
 // The agent that reads its own source code, finds improvements,
 // refactors, runs tests, and commits to GitHub.
 
-const Anthropic = require('@anthropic-ai/sdk');
 const { exec } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const util = require('util');
 
 const execAsync = util.promisify(exec);
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || process.env.CLAUDE_MODEL || 'gpt-4.1';
+const { createMessage } = require('./llm');
 
 // Files the agent is allowed to read and potentially improve
 const AGENT_FILES = [
@@ -45,9 +43,8 @@ async function analyzeCode(onStep) {
 
   onStep('Analyzuji kvalitu kódu...');
 
-  const res = await client.messages.create({
-    model: MODEL,
-    max_tokens: 2048,
+  const res = await createMessage({
+    maxTokens: 2048,
     system: `You are a senior software engineer doing a code review of an AI agent system.
 Find real, concrete improvements. Focus on: error handling, code duplication, performance, maintainability.
 Return JSON only: { "score": 1-10, "issues": [{ "file": "...", "line_hint": "...", "severity": "low|medium|high", "description": "...", "fix": "..." }] }`,
@@ -57,7 +54,7 @@ Return JSON only: { "score": 1-10, "issues": [{ "file": "...", "line_hint": "...
     }],
   });
 
-  const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  const text = res.text;
   try {
     return JSON.parse(text.replace(/```json|```/g, '').trim());
   } catch {
