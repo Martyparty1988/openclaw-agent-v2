@@ -10,8 +10,11 @@ const path = require('path');
 const util = require('util');
 
 const execAsync = util.promisify(exec);
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
+const PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-8b-instruct:free';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
 
@@ -126,6 +129,17 @@ Think step by step. Use tools to get things done. Summarize what you did at the 
 
 class Executor {
   async run(userId, planOrTask, onProgress, maxIter = 12) {
+    if (PROVIDER === 'openrouter') {
+      return this.runOpenRouter(planOrTask);
+    }
+    if (PROVIDER === 'openai') {
+      return this.runOpenAI(planOrTask);
+    }
+
+    if (!client) {
+      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter for free models.');
+    }
+
     const task = typeof planOrTask === 'string'
       ? planOrTask
       : `Goal: ${planOrTask.goal}\n\nSteps:\n${planOrTask.steps.map(s => `${s.id}. [${s.tool}] ${s.action}: ${s.details}`).join('\n')}`;
@@ -168,6 +182,38 @@ class Executor {
   }
 
   async chat(userId, message, history = []) {
+    if (PROVIDER === 'openrouter') {
+      const orMessages = [
+        ...history,
+        { role: 'user', content: message },
+      ];
+      const output = await this.chatCompletions({
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        token: process.env.OPENROUTER_API_KEY,
+        tokenLabel: 'OPENROUTER_API_KEY',
+        model: OPENROUTER_MODEL,
+      }, orMessages);
+      return output;
+    }
+
+    if (PROVIDER === 'openai') {
+      const aiMessages = [
+        ...history,
+        { role: 'user', content: message },
+      ];
+      const output = await this.chatCompletions({
+        url: 'https://api.openai.com/v1/chat/completions',
+        token: process.env.OPENAI_API_KEY,
+        tokenLabel: 'OPENAI_API_KEY',
+        model: OPENAI_MODEL,
+      }, aiMessages);
+      return output;
+    }
+
+    if (!client) {
+      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter for free models.');
+    }
+
     const messages = [
       ...history,
       { role: 'user', content: message },
@@ -181,6 +227,57 @@ class Executor {
     });
 
     return res.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+  }
+
+  async runOpenRouter(planOrTask) {
+    const task = typeof planOrTask === 'string'
+      ? planOrTask
+      : `Goal: ${planOrTask.goal}\n\nSteps:\n${planOrTask.steps.map(s => `${s.id}. ${s.action}: ${s.details}`).join('\n')}`;
+    const output = await this.chatCompletions({
+      url: 'https://openrouter.ai/api/v1/chat/completions',
+      token: process.env.OPENROUTER_API_KEY,
+      tokenLabel: 'OPENROUTER_API_KEY',
+      model: OPENROUTER_MODEL,
+    }, [{ role: 'user', content: task }]);
+    return { output, iterations: 1 };
+  }
+
+  async runOpenAI(planOrTask) {
+    const task = typeof planOrTask === 'string'
+      ? planOrTask
+      : `Goal: ${planOrTask.goal}\n\nSteps:\n${planOrTask.steps.map(s => `${s.id}. ${s.action}: ${s.details}`).join('\n')}`;
+    const output = await this.chatCompletions({
+      url: 'https://api.openai.com/v1/chat/completions',
+      token: process.env.OPENAI_API_KEY,
+      tokenLabel: 'OPENAI_API_KEY',
+      model: OPENAI_MODEL,
+    }, [{ role: 'user', content: task }]);
+    return { output, iterations: 1 };
+  }
+
+  async chatCompletions(config, messages) {
+    if (!config.token) {
+      throw new Error(`${config.tokenLabel} is missing.`);
+    }
+
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`${PROVIDER} executor failed: ${response.status} ${await response.text()}`);
+    }
+
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content || 'Žádná odpověď od modelu.';
   }
 }
 
