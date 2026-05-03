@@ -15,6 +15,7 @@ const COMMANDS = {
   webimprove: ['web improve', 'improve web', 'zlepši web', 'update web'],
   reset:    ['reset', 'zapomeň', 'forget', 'clear'],
   help:     ['help', 'pomoc', 'příkazy'],
+  status:   ['status', 'stav'],
   chat:     [], // fallback
 };
 
@@ -52,6 +53,26 @@ class MetaAgent {
         case 'help':
           await reply(HELP_TEXT);
           break;
+
+        case 'status': {
+          const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
+          const tokenByProvider = {
+            anthropic: !!process.env.ANTHROPIC_API_KEY,
+            openrouter: !!process.env.OPENROUTER_API_KEY,
+            openai: !!process.env.OPENAI_API_KEY,
+          };
+          const isTokenSet = tokenByProvider[provider];
+          const telegramOn = !!process.env.TELEGRAM_TOKEN;
+          await reply([
+            '🩺 *Stav bota*',
+            `• LLM provider: *${provider}*`,
+            `• API klíč pro provider: *${isTokenSet ? 'nastaven' : 'CHYBÍ'}*`,
+            `• Telegram token: *${telegramOn ? 'nastaven' : 'nenastaven'}*`,
+            '',
+            'Pokud chybí API klíč, bot často odpovídá fallbackem nebo chybou místo plné AI odpovědi.'
+          ].join('\n'));
+          break;
+        }
 
         case 'reset':
           await this.memory.clear(userId);
