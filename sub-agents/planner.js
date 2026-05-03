@@ -7,6 +7,7 @@ const PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-8b-instruct:free';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 const SYSTEM = `You are a Planner agent. Your only job is to decompose tasks into clear, executable steps.
 Always return valid JSON only — no markdown, no explanation outside the JSON.
@@ -31,28 +32,21 @@ class Planner {
 
   async generatePlanText(task) {
     if (PROVIDER === 'openrouter') {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: OPENROUTER_MODEL,
-          messages: [
-            { role: 'system', content: SYSTEM },
-            { role: 'user', content: `Create an execution plan for: ${task}` },
-          ],
-          temperature: 0.2,
-        }),
-      });
+      return this.generateChatCompletionsText({
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        token: process.env.OPENROUTER_API_KEY,
+        tokenLabel: 'OPENROUTER_API_KEY',
+        model: OPENROUTER_MODEL,
+      }, task);
+    }
 
-      if (!response.ok) {
-        throw new Error(`OpenRouter planner failed: ${response.status} ${await response.text()}`);
-      }
-
-      const data = await response.json();
-      return data?.choices?.[0]?.message?.content || '';
+    if (PROVIDER === 'openai') {
+      return this.generateChatCompletionsText({
+        url: 'https://api.openai.com/v1/chat/completions',
+        token: process.env.OPENAI_API_KEY,
+        tokenLabel: 'OPENAI_API_KEY',
+        model: OPENAI_MODEL,
+      }, task);
     }
 
     if (!client) {
@@ -67,6 +61,35 @@ class Planner {
     });
 
     return response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  }
+
+  async generateChatCompletionsText(config, task) {
+    if (!config.token) {
+      throw new Error(`${config.tokenLabel} is missing.`);
+    }
+
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: SYSTEM },
+          { role: 'user', content: `Create an execution plan for: ${task}` },
+        ],
+        temperature: 0.2,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`${PROVIDER} planner failed: ${response.status} ${await response.text()}`);
+    }
+
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content || '';
   }
 }
 

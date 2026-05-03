@@ -52,6 +52,18 @@ export OPENROUTER_MODEL=meta-llama/llama-3.3-8b-instruct:free
 
 Pak agent používá OpenRouter Chat Completions API pro `plan`, `execute`, `analyze` i `chat`.
 
+### OpenAI API
+
+Pro použití OpenAI modelů:
+
+```bash
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+export OPENAI_MODEL=gpt-4o-mini
+```
+
+Pak agent používá OpenAI Chat Completions API pro `plan`, `execute`, `analyze` i `chat`.
+
 ## Quick Deploy (Railway)
 
 1. Prepare env file and validate configuration:

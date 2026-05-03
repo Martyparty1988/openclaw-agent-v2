@@ -14,6 +14,7 @@ const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.e
 const PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-8b-instruct:free';
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
 
@@ -131,6 +132,9 @@ class Executor {
     if (PROVIDER === 'openrouter') {
       return this.runOpenRouter(planOrTask);
     }
+    if (PROVIDER === 'openai') {
+      return this.runOpenAI(planOrTask);
+    }
 
     if (!client) {
       throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter for free models.');
@@ -183,7 +187,26 @@ class Executor {
         ...history,
         { role: 'user', content: message },
       ];
-      const output = await this.openRouterChat(orMessages);
+      const output = await this.chatCompletions({
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        token: process.env.OPENROUTER_API_KEY,
+        tokenLabel: 'OPENROUTER_API_KEY',
+        model: OPENROUTER_MODEL,
+      }, orMessages);
+      return output;
+    }
+
+    if (PROVIDER === 'openai') {
+      const aiMessages = [
+        ...history,
+        { role: 'user', content: message },
+      ];
+      const output = await this.chatCompletions({
+        url: 'https://api.openai.com/v1/chat/completions',
+        token: process.env.OPENAI_API_KEY,
+        tokenLabel: 'OPENAI_API_KEY',
+        model: OPENAI_MODEL,
+      }, aiMessages);
       return output;
     }
 
@@ -210,25 +233,47 @@ class Executor {
     const task = typeof planOrTask === 'string'
       ? planOrTask
       : `Goal: ${planOrTask.goal}\n\nSteps:\n${planOrTask.steps.map(s => `${s.id}. ${s.action}: ${s.details}`).join('\n')}`;
-    const output = await this.openRouterChat([{ role: 'user', content: task }]);
+    const output = await this.chatCompletions({
+      url: 'https://openrouter.ai/api/v1/chat/completions',
+      token: process.env.OPENROUTER_API_KEY,
+      tokenLabel: 'OPENROUTER_API_KEY',
+      model: OPENROUTER_MODEL,
+    }, [{ role: 'user', content: task }]);
     return { output, iterations: 1 };
   }
 
-  async openRouterChat(messages) {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  async runOpenAI(planOrTask) {
+    const task = typeof planOrTask === 'string'
+      ? planOrTask
+      : `Goal: ${planOrTask.goal}\n\nSteps:\n${planOrTask.steps.map(s => `${s.id}. ${s.action}: ${s.details}`).join('\n')}`;
+    const output = await this.chatCompletions({
+      url: 'https://api.openai.com/v1/chat/completions',
+      token: process.env.OPENAI_API_KEY,
+      tokenLabel: 'OPENAI_API_KEY',
+      model: OPENAI_MODEL,
+    }, [{ role: 'user', content: task }]);
+    return { output, iterations: 1 };
+  }
+
+  async chatCompletions(config, messages) {
+    if (!config.token) {
+      throw new Error(`${config.tokenLabel} is missing.`);
+    }
+
+    const response = await fetch(config.url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${config.token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
+        model: config.model,
         messages,
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`OpenRouter executor failed: ${response.status} ${await response.text()}`);
+      throw new Error(`${PROVIDER} executor failed: ${response.status} ${await response.text()}`);
     }
 
     const data = await response.json();
