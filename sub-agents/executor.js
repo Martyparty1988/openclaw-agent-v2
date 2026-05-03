@@ -124,6 +124,8 @@ Present findings clearly with key numbers. Use bash for Python/Node analysis scr
   deploy: `You are DeployAgent, a DevOps expert. Handle git, deployments, servers, backups.
 Check current state before changes. Be conservative — confirm before destructive operations.`,
   general: `You are a capable AI assistant with access to real tools.
+Never claim you can only answer from a specific knowledge base unless the user explicitly asks for KB-only mode.
+If information is missing, ask a brief clarifying question or explain what is needed.
 Think step by step. Use tools to get things done. Summarize what you did at the end.`,
 };
 
