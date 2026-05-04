@@ -33,9 +33,9 @@ function parseCommand(text) {
 
 class MetaAgent {
   constructor() {
-    this.planner    = new Planner();
-    this.executor   = new Executor();
-    this.memory     = new Memory();
+    this.planner = new Planner();
+    this.executor = new Executor();
+    this.memory = new Memory();
     this.selfImprove = new SelfImprove();
     this.webImprove = new WebImprove();
   }
@@ -44,32 +44,46 @@ class MetaAgent {
     const { userId, platform, text, reply } = msg;
     const { command, task } = parseCommand(text);
 
-    // Log incoming message
     console.log(`[${platform.toUpperCase()}][${userId}] ${command}: ${task || '—'}`);
 
     try {
       switch (command) {
-
         case 'help':
           await reply(HELP_TEXT);
           break;
 
         case 'status': {
-          const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
+          const provider = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
           const tokenByProvider = {
             anthropic: !!process.env.ANTHROPIC_API_KEY,
             openrouter: !!process.env.OPENROUTER_API_KEY,
             openai: !!process.env.OPENAI_API_KEY,
           };
+          const modelByProvider = {
+            anthropic: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022',
+            openrouter: process.env.OPENROUTER_MODEL || 'openrouter/free',
+            openai: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          };
           const isTokenSet = tokenByProvider[provider];
           const telegramOn = !!process.env.TELEGRAM_TOKEN;
+          const whatsappOn = !!process.env.WA_PHONE_NUMBER;
+          const modeNote = provider === 'openrouter'
+            ? 'Free OpenRouter režim je text-only. Pro opravdové tools použij Anthropic.'
+            : provider === 'anthropic'
+              ? 'Anthropic režim podporuje tool-calling executor.'
+              : 'OpenAI režim je v této verzi text-only.';
+
           await reply([
-            '🩺 *Stav bota*',
-            `• LLM provider: *${provider}*`,
-            `• API klíč pro provider: *${isTokenSet ? 'nastaven' : 'CHYBÍ'}*`,
-            `• Telegram token: *${telegramOn ? 'nastaven' : 'nenastaven'}*`,
+            '🩺 Stav bota',
+            `• LLM provider: ${provider}`,
+            `• Model: ${modelByProvider[provider] || 'neznámý'}`,
+            `• API klíč pro provider: ${isTokenSet ? 'nastaven' : 'CHYBÍ'}`,
+            `• Telegram token: ${telegramOn ? 'nastaven' : 'nenastaven'}`,
+            `• WhatsApp číslo: ${whatsappOn ? 'nastaveno' : 'nenastaveno'}`,
+            `• Bash tools: ${process.env.ALLOW_AGENT_BASH === 'true' ? 'zapnuté' : 'vypnuté'}`,
+            `• Write tools: ${process.env.ALLOW_AGENT_WRITE === 'true' ? 'zapnuté' : 'vypnuté'}`,
             '',
-            'Pokud chybí API klíč, bot často odpovídá fallbackem nebo chybou místo plné AI odpovědi.'
+            modeNote,
           ].join('\n'));
           break;
         }
@@ -80,17 +94,17 @@ class MetaAgent {
           break;
 
         case 'analyze': {
-          if (!task) return reply('❌ Zadej co analyzovat. Příklad: `analyze agents.js`');
+          if (!task) return reply('❌ Zadej co analyzovat. Příklad: analyze agents.js');
           await reply('🔍 Analyzuji...');
           const result = await this.executor.run(userId, `Analyze only, no changes: ${task}`, null);
           await this.memory.add(userId, 'user', text);
           await this.memory.add(userId, 'assistant', result.output);
-          await reply(`🔍 *Analýza:*\n\n${result.output}`);
+          await reply(`🔍 Analýza:\n\n${result.output}`);
           break;
         }
 
         case 'plan': {
-          if (!task) return reply('❌ Zadej co naplánovat. Příklad: `plan deploy solartrack`');
+          if (!task) return reply('❌ Zadej co naplánovat. Příklad: plan deploy solartrack');
           await reply('📋 Plánuji...');
           const plan = await this.planner.create(userId, task);
           await this.memory.add(userId, 'user', text);
@@ -100,10 +114,8 @@ class MetaAgent {
         }
 
         case 'execute': {
-          if (!task) return reply('❌ Zadej co spustit. Příklad: `execute oprav bug v router.js`');
-
-          // Reply immediately, run async
-          await reply(`⚙️ *Spouštím agenta...*\n_Dostaneš notifikaci až bude hotovo._`);
+          if (!task) return reply('❌ Zadej co spustit. Příklad: execute oprav bug v router.js');
+          await reply('⚙️ Spouštím agenta... Dostaneš notifikaci až bude hotovo.');
 
           setImmediate(async () => {
             const steps = [];
@@ -115,42 +127,42 @@ class MetaAgent {
               await this.memory.add(userId, 'assistant', result.output);
 
               const summary = [
-                `✅ *Hotovo!*`,
+                '✅ Hotovo!',
                 '',
                 result.output,
-                steps.length ? `\n🔧 _${steps.length} kroků provedeno_` : '',
+                steps.length ? `\n🔧 ${steps.length} kroků provedeno` : '',
               ].filter(Boolean).join('\n');
 
               await reply(summary);
             } catch (err) {
-              await reply(`❌ *Chyba:* ${err.message}`);
+              await reply(`❌ Chyba: ${err.message}`);
             }
           });
           break;
         }
 
         case 'improve': {
-          await reply('🧬 *Self-improve spuštěn...*\n_Analyzuji svůj kód, refaktoruji, testuji a commitnu změny._');
+          await reply('🧬 Self-improve spuštěn... Analyzuji svůj kód, refaktoruji, testuji a commitnu změny.');
 
           setImmediate(async () => {
             try {
               const result = await this.selfImprove.run((step) => reply(`⏳ ${step}`));
-              await reply(`✅ *Self-improve dokončen!*\n\n${result}`);
+              await reply(`✅ Self-improve dokončen!\n\n${result}`);
             } catch (err) {
-              await reply(`❌ *Self-improve selhal:* ${err.message}`);
+              await reply(`❌ Self-improve selhal: ${err.message}`);
             }
           });
           break;
         }
 
         case 'webimprove': {
-          await reply(`🌐 *Web-improve spuštěn...*\n_Analyzuji web, generuji vylepšení a commitnu._`);
+          await reply('🌐 Web-improve spuštěn... Analyzuji web, generuji vylepšení a commitnu.');
           setImmediate(async () => {
             try {
               const result = await this.webImprove.run((step) => reply(`⏳ ${step}`));
-              await reply(`✅ *Web-improve dokončen!*\n\n${result}`);
+              await reply(`✅ Web-improve dokončen!\n\n${result}`);
             } catch (err) {
-              await reply(`❌ *Web-improve selhal:* ${err.message}`);
+              await reply(`❌ Web-improve selhal: ${err.message}`);
             }
           });
           break;
@@ -168,7 +180,7 @@ class MetaAgent {
         }
       }
     } catch (err) {
-      console.error(`[MetaAgent Error]`, err);
+      console.error('[MetaAgent Error]', err);
       await reply(`❌ Systémová chyba: ${err.message}`);
     }
   }
@@ -176,23 +188,24 @@ class MetaAgent {
 
 function formatPlan(plan) {
   return [
-    `📋 *${plan.goal}*`,
+    `📋 ${plan.goal}`,
     '',
-    ...plan.steps.map(s => `*${s.id}.* ${s.action}\n   _${s.details}_`),
+    ...plan.steps.map((s) => `${s.id}. ${s.action}\n   ${s.details}`),
   ].join('\n');
 }
 
-const HELP_TEXT = `🤖 *OpenClaw Meta-Agent*
+const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 
-*Příkazy:*
-• \`analyze <co>\` — Analyzuj soubor nebo kód
-• \`plan <úkol>\` — Vytvoř plán
-• \`execute <úkol>\` — Spusť agenta (async, notifikace)
-• \`improve\` — 🧬 Self-improve: agent refaktoruje vlastní kód
-• \`reset\` — Smaž session paměť
-• \`help\` — Tato nápověda
+Příkazy:
+• analyze <co> — analyzuje soubor nebo kód
+• plan <úkol> — vytvoří plán
+• execute <úkol> — spustí agenta async
+• improve — self-improve cyklus
+• status — stav providera/modelu
+• reset — smaže session paměť
+• help — tato nápověda
 
-*Platformy:* WhatsApp + Telegram
-*Agenti:* Planner · Executor · Memory · SelfImprove`;
+Výchozí free režim: OpenRouter openrouter/free.
+Plné nástroje pro práci se soubory a bashem: Anthropic režim + bezpečnostní env flagy.`;
 
 module.exports = MetaAgent;
