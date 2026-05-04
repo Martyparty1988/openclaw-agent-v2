@@ -8,8 +8,16 @@ const SelfImprove = require('./sub-agents/self-improve');
 const WebImprove = require('./sub-agents/web-improve');
 const EmailAgent = require('./sub-agents/email');
 const Learner = require('./sub-agents/learner');
+const {
+  applyPreset,
+  listPresetsText,
+  statusSummary,
+  getProvider,
+  getModelForProvider,
+} = require('./sub-agents/model-presets');
 
 const COMMANDS = {
+  model: ['model', 'models', 'přepni model', 'prepni model', 'jazykový model', 'jazykovy model'],
   email: ['email', 'mail', 'send email', 'pošli email', 'posli email', 'pošli mail', 'posli mail'],
   learn: ['learn', 'nauč se', 'nauc se', 'načti', 'nacti', 'ulož zdroj', 'uloz zdroj'],
   backup: ['backup', 'záloha', 'zaloha', 'export memory', 'export paměti', 'export pameti'],
@@ -53,15 +61,15 @@ function friendlyError(err) {
   const lower = raw.toLowerCase();
 
   if (lower.includes('credit balance is too low') || lower.includes('purchase credits') || lower.includes('plans & billing')) {
-    return 'Claude/Anthropic API nemá kredit. Buď dobij kredit v Anthropic Console, nebo v Railway přepni LLM_PROVIDER=openrouter a použij OPENROUTER_MODEL=openrouter/free.';
+    return 'Claude/Anthropic API nemá kredit. Buď dobij kredit v Anthropic Console, nebo použij /model openrouter free.';
   }
 
   if (lower.includes('missing authentication header') || lower.includes('401')) {
-    return 'API klíč pro aktuální provider chybí nebo je špatně vložený. Zkontroluj Railway Variables pro LLM_PROVIDER a příslušný API key.';
+    return 'API klíč pro aktuální provider chybí nebo je špatně vložený. Zkontroluj Railway Variables pro aktuální model.';
   }
 
   if (lower.includes('invalid api key') || lower.includes('authentication') || lower.includes('unauthorized')) {
-    return 'API klíč je špatný nebo chybí. Zkontroluj v Railway Variables klíč pro aktuální LLM_PROVIDER.';
+    return 'API klíč je špatný nebo chybí. Zkontroluj Railway Variables klíč pro aktuální LLM provider.';
   }
 
   if (lower.includes('not a legal http header value') || lower.includes('bytestring')) {
@@ -69,7 +77,7 @@ function friendlyError(err) {
   }
 
   if (lower.includes('connection error')) {
-    return 'Connection error při volání AI API. Zkontroluj klíč, kredit/billing a zkus redeploy. Když používáš Claude bez kreditu, přepni na OpenRouter free.';
+    return 'Connection error při volání AI API. Zkontroluj klíč, kredit/billing a zkus redeploy. Pro free režim použij /model openrouter free.';
   }
 
   return err?.message || 'Neznámá systémová chyba.';
@@ -84,6 +92,14 @@ function splitLongText(text, maxLen = 3600) {
   }
   if (rest) out.push(rest);
   return out;
+}
+
+function modeNote(provider) {
+  if (provider === 'openrouter') return 'OpenRouter režim je text-only. Free volba: /model openrouter free.';
+  if (provider === 'deepseek') return 'DeepSeek režim je text-only provider přes OpenAI-compatible API.';
+  if (provider === 'anthropic') return 'Anthropic režim podporuje tool-calling executor, ale vyžaduje API kredit.';
+  if (provider === 'openai') return 'OpenAI režim je v této verzi text-only.';
+  return 'Neznámý provider.';
 }
 
 class MetaAgent {
@@ -109,36 +125,47 @@ class MetaAgent {
           await reply(HELP_TEXT);
           break;
 
+        case 'model': {
+          if (!task) {
+            const current = statusSummary();
+            await reply([
+              listPresetsText(),
+              '',
+              `Aktuálně: ${current.provider} / ${current.model}`,
+              `API klíč pro aktuální provider: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`,
+            ].join('\n'));
+            break;
+          }
+
+          const selected = applyPreset(task);
+          if (!selected) {
+            await reply(`❌ Neznámý model preset: ${task}\n\n${listPresetsText()}`);
+            break;
+          }
+
+          const current = statusSummary();
+          await reply([
+            '✅ Model přepnut pro aktuálně běžící bot proces.',
+            `• Provider: ${current.provider}`,
+            `• Model: ${current.model}`,
+            `• API klíč: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`,
+            '',
+            'Poznámka: přepnutí přes chat platí do restartu/redeploye. Natrvalo nastav stejné hodnoty v Railway Variables.',
+          ].join('\n'));
+          break;
+        }
+
         case 'status': {
-          const provider = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
+          const provider = getProvider();
           const stats = await this.memory.stats(userId);
-          const tokenByProvider = {
-            anthropic: !!process.env.ANTHROPIC_API_KEY,
-            openrouter: !!process.env.OPENROUTER_API_KEY,
-            deepseek: !!process.env.DEEPSEEK_API_KEY,
-            openai: !!process.env.OPENAI_API_KEY,
-          };
-          const modelByProvider = {
-            anthropic: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022',
-            openrouter: process.env.OPENROUTER_MODEL || 'openrouter/free',
-            deepseek: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
-            openai: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          };
-          const isTokenSet = tokenByProvider[provider];
-          const modeNote = provider === 'openrouter'
-            ? 'Free OpenRouter režim je text-only. Pro opravdové tools použij Anthropic.'
-            : provider === 'deepseek'
-              ? 'DeepSeek režim je text-only provider přes OpenAI-compatible API.'
-              : provider === 'anthropic'
-                ? 'Anthropic režim podporuje tool-calling executor.'
-                : 'OpenAI režim je v této verzi text-only.';
+          const current = statusSummary();
 
           await reply([
             '🩺 Stav bota',
             `• Jazyk: čeština natvrdo`,
             `• LLM provider: ${provider}`,
-            `• Model: ${modelByProvider[provider] || 'neznámý'}`,
-            `• API klíč pro provider: ${isTokenSet ? 'nastaven' : 'CHYBÍ'}`,
+            `• Model: ${getModelForProvider(provider)}`,
+            `• API klíč pro provider: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`,
             `• Telegram token: ${process.env.TELEGRAM_TOKEN ? 'nastaven' : 'nenastaven'}`,
             `• Email SMTP: ${this.email.isConfigured() ? 'nastaven' : 'nenastaven'}`,
             `• Email účet: ${process.env.SMTP_USER || 'nenastaven'}`,
@@ -149,7 +176,7 @@ class MetaAgent {
             `• Trvalé poznámky: ${stats.knowledge}`,
             `• Memory dir: ${stats.memoryDir}`,
             '',
-            modeNote,
+            modeNote(provider),
           ].join('\n'));
           break;
         }
@@ -189,9 +216,7 @@ class MetaAgent {
         case 'backup': {
           const backup = await this.memory.exportJson(userId);
           await reply('📦 Záloha paměti níže. Ulož si ji bezpečně.');
-          for (const chunk of splitLongText(backup, 3500)) {
-            await reply(chunk);
-          }
+          for (const chunk of splitLongText(backup, 3500)) await reply(chunk);
           break;
         }
 
@@ -253,7 +278,6 @@ class MetaAgent {
         case 'execute': {
           if (!task) return reply('❌ Zadej co spustit. Příklad: /execute oprav bug v router.js');
           await reply('⚙️ Spouštím agenta... Dostaneš notifikaci až bude hotovo.');
-
           setImmediate(async () => {
             const steps = [];
             try {
@@ -330,6 +354,14 @@ const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 Příkazy:
 • /start nebo /help — nápověda
 • /status — stav providera/modelu/paměti/emailu
+• /model — vypíše dostupné modely
+• /model openrouter free — přepne na free OpenRouter router
+• /model openrouter qwen — přepne na Qwen free přes OpenRouter
+• /model openrouter llama — přepne na Llama free přes OpenRouter
+• /model openrouter deepseek — zkusí DeepSeek free přes OpenRouter
+• /model deepseek flash — přepne na přímé DeepSeek API
+• /model openai mini — přepne na OpenAI API
+• /model anthropic sonnet — přepne na Claude API
 • /learn <text nebo URL> — uloží veřejný zdroj nebo text do znalostí
 • /backup — pošle JSON zálohu paměti
 • /restore <JSON> — obnoví/sloučí zálohu paměti
@@ -344,8 +376,7 @@ Příkazy:
 • /reset — smaže jen konverzační paměť
 
 Jazyk: čeština natvrdo.
-Podporované text-only providery: OpenRouter, DeepSeek, OpenAI.
-Email: SMTP přes Railway Variables.
-Plné nástroje pro práci se soubory a bashem: Anthropic režim + bezpečnostní env flagy.`;
+Přepnutí /model přes chat platí do restartu/redeploye. Natrvalo se nastavuje přes Railway Variables.
+Klíče zůstávají pouze v Railway Variables.`;
 
 module.exports = MetaAgent;
