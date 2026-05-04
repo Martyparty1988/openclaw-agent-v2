@@ -8,15 +8,18 @@ const SelfImprove = require('./sub-agents/self-improve');
 const WebImprove = require('./sub-agents/web-improve');
 
 const COMMANDS = {
-  analyze:  ['analyze', 'analyzuj', 'analyse'],
-  plan:     ['plan', 'plán', 'naplánuj'],
-  execute:  ['execute', 'exec', 'spusť', 'udělej'],
-  improve:  ['improve', 'zlepši', 'self-improve', 'refactor self'],
+  remember: ['remember', 'zapamatuj', 'ulož', 'uloz', 'pamatuj'],
+  facts: ['facts', 'poznámky', 'poznamky', 'paměť', 'pamet', 'knowledge'],
+  memoryclear: ['clear facts', 'smaž poznámky', 'smaz poznamky', 'clear knowledge'],
+  analyze: ['analyze', 'analyzuj', 'analyse'],
+  plan: ['plan', 'plán', 'naplánuj'],
+  execute: ['execute', 'exec', 'spusť', 'udělej'],
+  improve: ['improve', 'zlepši', 'self-improve', 'refactor self'],
   webimprove: ['web improve', 'improve web', 'zlepši web', 'update web'],
-  reset:    ['reset', 'zapomeň', 'forget', 'clear'],
-  help:     ['help', 'pomoc', 'příkazy'],
-  status:   ['status', 'stav'],
-  chat:     [], // fallback
+  reset: ['reset', 'zapomeň', 'forget', 'clear'],
+  help: ['help', 'pomoc', 'příkazy'],
+  status: ['status', 'stav'],
+  chat: [],
 };
 
 function parseCommand(text) {
@@ -54,6 +57,7 @@ class MetaAgent {
 
         case 'status': {
           const provider = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
+          const stats = await this.memory.stats(userId);
           const tokenByProvider = {
             anthropic: !!process.env.ANTHROPIC_API_KEY,
             openrouter: !!process.env.OPENROUTER_API_KEY,
@@ -65,8 +69,6 @@ class MetaAgent {
             openai: process.env.OPENAI_MODEL || 'gpt-4o-mini',
           };
           const isTokenSet = tokenByProvider[provider];
-          const telegramOn = !!process.env.TELEGRAM_TOKEN;
-          const whatsappOn = !!process.env.WA_PHONE_NUMBER;
           const modeNote = provider === 'openrouter'
             ? 'Free OpenRouter režim je text-only. Pro opravdové tools použij Anthropic.'
             : provider === 'anthropic'
@@ -78,19 +80,45 @@ class MetaAgent {
             `• LLM provider: ${provider}`,
             `• Model: ${modelByProvider[provider] || 'neznámý'}`,
             `• API klíč pro provider: ${isTokenSet ? 'nastaven' : 'CHYBÍ'}`,
-            `• Telegram token: ${telegramOn ? 'nastaven' : 'nenastaven'}`,
-            `• WhatsApp číslo: ${whatsappOn ? 'nastaveno' : 'nenastaveno'}`,
+            `• Telegram token: ${process.env.TELEGRAM_TOKEN ? 'nastaven' : 'nenastaven'}`,
+            `• WhatsApp číslo: ${process.env.WA_PHONE_NUMBER ? 'nastaveno' : 'nenastaveno'}`,
             `• Bash tools: ${process.env.ALLOW_AGENT_BASH === 'true' ? 'zapnuté' : 'vypnuté'}`,
             `• Write tools: ${process.env.ALLOW_AGENT_WRITE === 'true' ? 'zapnuté' : 'vypnuté'}`,
+            `• Zprávy v paměti: ${stats.messages}`,
+            `• Trvalé poznámky: ${stats.knowledge}`,
+            `• Memory dir: ${stats.memoryDir}`,
             '',
             modeNote,
           ].join('\n'));
           break;
         }
 
+        case 'remember': {
+          if (!task) return reply('❌ Napiš co si mám zapamatovat. Příklad: remember Martin pracuje na Railway botovi.');
+          const item = await this.memory.addKnowledge(userId, task, { source: 'manual' });
+          await reply(`✅ Uloženo do trvalé paměti.\nID: ${item.id}`);
+          break;
+        }
+
+        case 'facts': {
+          const items = await this.memory.listKnowledge(userId, 20);
+          if (!items.length) return reply('ℹ️ Zatím nemám uložené žádné trvalé poznámky. Použij: remember ...');
+          await reply([
+            `🧠 Trvalá paměť (${items.length} posledních položek):`,
+            '',
+            ...items.map((item, index) => `${index + 1}. ${item.content.slice(0, 500)}\n   ID: ${item.id}`),
+          ].join('\n'));
+          break;
+        }
+
+        case 'memoryclear':
+          await this.memory.clearKnowledge(userId);
+          await reply('🧹 Trvalé poznámky smazány.');
+          break;
+
         case 'reset':
           await this.memory.clear(userId);
-          await reply('🧹 Paměť smazána. Začínáme znovu!');
+          await reply('🧹 Konverzační paměť smazána. Trvalé poznámky zůstaly.');
           break;
 
         case 'analyze': {
@@ -143,7 +171,6 @@ class MetaAgent {
 
         case 'improve': {
           await reply('🧬 Self-improve spuštěn... Analyzuji svůj kód, refaktoruji, testuji a commitnu změny.');
-
           setImmediate(async () => {
             try {
               const result = await this.selfImprove.run((step) => reply(`⏳ ${step}`));
@@ -172,7 +199,11 @@ class MetaAgent {
         default: {
           await reply('💬 Přemýšlím...');
           const history = await this.memory.getHistory(userId);
-          const result = await this.executor.chat(userId, task, history);
+          const knowledge = await this.memory.getKnowledgeContext(userId);
+          const enrichedTask = knowledge
+            ? `Relevantní trvalá paměť o uživateli a projektu:\n${knowledge}\n\nAktuální zpráva uživatele:\n${task}`
+            : task;
+          const result = await this.executor.chat(userId, enrichedTask, history);
           await this.memory.add(userId, 'user', task);
           await this.memory.add(userId, 'assistant', result);
           await reply(result);
@@ -197,12 +228,15 @@ function formatPlan(plan) {
 const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 
 Příkazy:
+• remember <text> — uloží trvalou poznámku
+• facts — ukáže trvalé poznámky
+• clear facts — smaže trvalé poznámky
+• status — stav providera/modelu/paměti
 • analyze <co> — analyzuje soubor nebo kód
 • plan <úkol> — vytvoří plán
 • execute <úkol> — spustí agenta async
 • improve — self-improve cyklus
-• status — stav providera/modelu
-• reset — smaže session paměť
+• reset — smaže jen konverzační paměť
 • help — tato nápověda
 
 Výchozí free režim: OpenRouter openrouter/free.
