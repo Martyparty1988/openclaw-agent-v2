@@ -17,21 +17,31 @@ const COMMANDS = {
   improve: ['improve', 'zlepši', 'self-improve', 'refactor self'],
   webimprove: ['web improve', 'improve web', 'zlepši web', 'update web'],
   reset: ['reset', 'zapomeň', 'forget', 'clear'],
-  help: ['help', 'pomoc', 'příkazy'],
+  help: ['start', 'help', 'pomoc', 'příkazy'],
   status: ['status', 'stav'],
   chat: [],
 };
 
+function normalizeIncomingText(text) {
+  const raw = String(text || '').trim();
+  // Telegram commands arrive as /status or /status@BotName.
+  // Internally we parse them as plain commands: status.
+  return raw.replace(/^\/+/, '').replace(/^([^\s@]+)@[^\s]+/, '$1');
+}
+
 function parseCommand(text) {
-  const lower = text.toLowerCase().trim();
+  const normalized = normalizeIncomingText(text);
+  const lower = normalized.toLowerCase().trim();
+
   for (const [cmd, keywords] of Object.entries(COMMANDS)) {
     for (const kw of keywords) {
       if (lower.startsWith(kw + ' ') || lower === kw) {
-        return { command: cmd, task: text.slice(kw.length).trim() };
+        return { command: cmd, task: normalized.slice(kw.length).trim() };
       }
     }
   }
-  return { command: 'chat', task: text };
+
+  return { command: 'chat', task: normalized };
 }
 
 class MetaAgent {
@@ -94,7 +104,7 @@ class MetaAgent {
         }
 
         case 'remember': {
-          if (!task) return reply('❌ Napiš co si mám zapamatovat. Příklad: remember Martin pracuje na Railway botovi.');
+          if (!task) return reply('❌ Napiš co si mám zapamatovat. Příklad: /remember Martin pracuje na Railway botovi.');
           const item = await this.memory.addKnowledge(userId, task, { source: 'manual' });
           await reply(`✅ Uloženo do trvalé paměti.\nID: ${item.id}`);
           break;
@@ -102,7 +112,7 @@ class MetaAgent {
 
         case 'facts': {
           const items = await this.memory.listKnowledge(userId, 20);
-          if (!items.length) return reply('ℹ️ Zatím nemám uložené žádné trvalé poznámky. Použij: remember ...');
+          if (!items.length) return reply('ℹ️ Zatím nemám uložené žádné trvalé poznámky. Použij: /remember ...');
           await reply([
             `🧠 Trvalá paměť (${items.length} posledních položek):`,
             '',
@@ -122,7 +132,7 @@ class MetaAgent {
           break;
 
         case 'analyze': {
-          if (!task) return reply('❌ Zadej co analyzovat. Příklad: analyze agents.js');
+          if (!task) return reply('❌ Zadej co analyzovat. Příklad: /analyze agents.js');
           await reply('🔍 Analyzuji...');
           const result = await this.executor.run(userId, `Analyze only, no changes: ${task}`, null);
           await this.memory.add(userId, 'user', text);
@@ -132,7 +142,7 @@ class MetaAgent {
         }
 
         case 'plan': {
-          if (!task) return reply('❌ Zadej co naplánovat. Příklad: plan deploy solartrack');
+          if (!task) return reply('❌ Zadej co naplánovat. Příklad: /plan deploy solartrack');
           await reply('📋 Plánuji...');
           const plan = await this.planner.create(userId, task);
           await this.memory.add(userId, 'user', text);
@@ -142,7 +152,7 @@ class MetaAgent {
         }
 
         case 'execute': {
-          if (!task) return reply('❌ Zadej co spustit. Příklad: execute oprav bug v router.js');
+          if (!task) return reply('❌ Zadej co spustit. Příklad: /execute oprav bug v router.js');
           await reply('⚙️ Spouštím agenta... Dostaneš notifikaci až bude hotovo.');
 
           setImmediate(async () => {
@@ -228,16 +238,16 @@ function formatPlan(plan) {
 const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 
 Příkazy:
-• remember <text> — uloží trvalou poznámku
-• facts — ukáže trvalé poznámky
-• clear facts — smaže trvalé poznámky
-• status — stav providera/modelu/paměti
-• analyze <co> — analyzuje soubor nebo kód
-• plan <úkol> — vytvoří plán
-• execute <úkol> — spustí agenta async
-• improve — self-improve cyklus
-• reset — smaže jen konverzační paměť
-• help — tato nápověda
+• /start nebo /help — nápověda
+• /status — stav providera/modelu/paměti
+• /remember <text> — uloží trvalou poznámku
+• /facts — ukáže trvalé poznámky
+• /clear facts — smaže trvalé poznámky
+• /analyze <co> — analyzuje soubor nebo kód
+• /plan <úkol> — vytvoří plán
+• /execute <úkol> — spustí agenta async
+• /improve — self-improve cyklus
+• /reset — smaže jen konverzační paměť
 
 Výchozí free režim: OpenRouter openrouter/free.
 Plné nástroje pro práci se soubory a bashem: Anthropic režim + bezpečnostní env flagy.`;
