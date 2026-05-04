@@ -28,6 +28,7 @@ class AutoWorker {
     this.intervalMs = Math.max(Number(process.env.AUTO_INTERVAL_MINUTES || 60), 5) * 60 * 1000;
     this.userId = process.env.AUTO_USER_ID || '';
     this.enabled = envFlag('AUTO_MODE');
+    this.gitOk = false;
   }
 
   start() {
@@ -63,6 +64,13 @@ class AutoWorker {
     return this.start();
   }
 
+  shouldRunAutoImprove() {
+    return envFlag('AUTO_IMPROVE')
+      && envFlag('ALLOW_AUTONOMOUS_WRITES')
+      && envFlag('AUTO_IMPROVE_CONFIRMED')
+      && this.gitOk;
+  }
+
   async tick() {
     if (this.running) return;
     this.running = true;
@@ -76,13 +84,20 @@ class AutoWorker {
         title: `Auto audit ${this.lastRun}`,
       });
 
-      if (envFlag('AUTO_IMPROVE') && envFlag('ALLOW_AUTONOMOUS_WRITES')) {
+      if (this.shouldRunAutoImprove()) {
         const improveResult = await this.metaAgent.selfImprove.run((step) => console.log(`[auto] ${step}`));
         await this.memory.addKnowledge(this.userId, improveResult, {
           source: 'auto-improve',
           title: `Auto improve ${now()}`,
         });
         this.lastResult += `\n\nAuto-improve:\n${improveResult}`;
+      } else if (envFlag('AUTO_IMPROVE') || envFlag('ALLOW_AUTONOMOUS_WRITES')) {
+        const reason = [
+          !envFlag('ALLOW_AUTONOMOUS_WRITES') ? 'ALLOW_AUTONOMOUS_WRITES není true' : '',
+          !envFlag('AUTO_IMPROVE_CONFIRMED') ? 'AUTO_IMPROVE_CONFIRMED není true' : '',
+          !this.gitOk ? 'git workspace není OK' : '',
+        ].filter(Boolean).join(', ');
+        console.log(`[auto] Auto-improve skipped: ${reason || 'pojistka'}`);
       }
     } finally {
       this.running = false;
@@ -115,12 +130,22 @@ class AutoWorker {
       try {
         checks.push('Git auto setup: zapnuto, zkouším opravit workspace...');
         await GitWorkspace.ensure();
-        checks.push('Git auto setup: hotovo');
+        await fs.access(path.join(workdir, '.git'));
+        gitOk = true;
+        checks.push('Git auto setup: hotovo, .git už existuje');
       } catch (err) {
         checks.push(`Git auto setup: selhalo — ${err.message}`);
       }
     } else if (!gitOk) {
       checks.push('Git auto setup: vypnuto, nastav GIT_AUTO_SETUP=true nebo spusť /git setup');
+    }
+
+    this.gitOk = gitOk;
+
+    if (envFlag('AUTO_IMPROVE')) {
+      checks.push(`Auto-improve pojistka: ${this.shouldRunAutoImprove() ? 'povoleno' : 'blokováno'}`);
+      if (!envFlag('AUTO_IMPROVE_CONFIRMED')) checks.push('Auto-improve důvod: chybí AUTO_IMPROVE_CONFIRMED=true');
+      if (!gitOk) checks.push('Auto-improve důvod: git workspace není OK');
     }
 
     const stats = await this.memory.stats(this.userId);
@@ -143,8 +168,9 @@ class AutoWorker {
       'Bezpečnost:',
       `• AUTO_IMPROVE: ${envFlag('AUTO_IMPROVE') ? 'true' : 'false'}`,
       `• ALLOW_AUTONOMOUS_WRITES: ${envFlag('ALLOW_AUTONOMOUS_WRITES') ? 'true' : 'false'}`,
+      `• AUTO_IMPROVE_CONFIRMED: ${envFlag('AUTO_IMPROVE_CONFIRMED') ? 'true' : 'false'}`,
       `• GIT_AUTO_SETUP: ${envFlag('GIT_AUTO_SETUP') ? 'true' : 'false'}`,
-      'Autonomní změny kódu se spustí jen když jsou AUTO_IMPROVE=true a ALLOW_AUTONOMOUS_WRITES=true.',
+      'Autonomní změny kódu se spustí jen když jsou AUTO_IMPROVE=true, ALLOW_AUTONOMOUS_WRITES=true, AUTO_IMPROVE_CONFIRMED=true a git workspace je OK.',
     ].join('\n');
   }
 }
