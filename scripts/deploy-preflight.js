@@ -6,6 +6,7 @@ const path = require('path');
 function loadDotEnv() {
   const envPath = path.join(process.cwd(), '.env');
   if (!fs.existsSync(envPath)) return;
+
   const content = fs.readFileSync(envPath, 'utf8');
   for (const rawLine of content.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -18,45 +19,70 @@ function loadDotEnv() {
   }
 }
 
+function has(name) {
+  return Boolean(process.env[name] && String(process.env[name]).trim());
+}
+
+function flag(name) {
+  return String(process.env[name] || '').toLowerCase() === 'true';
+}
+
+function print(name, ok, note = '') {
+  console.log(`${ok ? '✅' : '❌'} ${name}${note ? ` — ${note}` : ''}`);
+}
+
+function info(name, ok, note = '') {
+  console.log(`${ok ? 'ℹ️' : '⚪'} ${name}${note ? ` — ${note}` : ''}`);
+}
+
 loadDotEnv();
 
-const required = ['ANTHROPIC_API_KEY', 'WA_PHONE_NUMBER'];
-const optional = ['TELEGRAM_TOKEN', 'GIT_TOKEN', 'CLAUDE_MODEL', 'GIT_BRANCH', 'AGENT_WORKDIR', 'MEMORY_DIR'];
+const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
+const llmRequirements = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+};
 
-const missing = required.filter((key) => !process.env[key] || !String(process.env[key]).trim());
+const llmKey = llmRequirements[provider];
+const hasLlm = llmKey ? has(llmKey) : false;
+const whatsappEnabled = !flag('DISABLE_WHATSAPP') && has('WA_PHONE_NUMBER');
+const telegramEnabled = !flag('DISABLE_TELEGRAM') && has('TELEGRAM_TOKEN');
+const hasAllowlist = flag('ALLOW_ALL_USERS') || has('ALLOWED_USER_IDS') || has('ALLOWED_TELEGRAM_CHAT_IDS') || has('ALLOWED_WHATSAPP_NUMBERS');
 
-const checks = [
+const fileChecks = [
   { name: 'router.js exists', ok: fs.existsSync(path.join(process.cwd(), 'router.js')) },
   { name: 'meta-agent.js exists', ok: fs.existsSync(path.join(process.cwd(), 'meta-agent.js')) },
   { name: 'web/index.html exists', ok: fs.existsSync(path.join(process.cwd(), 'web', 'index.html')) },
   { name: 'railway.json exists', ok: fs.existsSync(path.join(process.cwd(), 'railway.json')) },
+  { name: '.gitignore exists', ok: fs.existsSync(path.join(process.cwd(), '.gitignore')) },
 ];
 
 console.log('🚦 OpenClaw deployment preflight\n');
 
-required.forEach((key) => {
-  const set = Boolean(process.env[key] && String(process.env[key]).trim());
-  console.log(`${set ? '✅' : '❌'} ${key}`);
-});
-
-optional.forEach((key) => {
-  const set = Boolean(process.env[key] && String(process.env[key]).trim());
-  console.log(`${set ? 'ℹ️' : '⚪'} ${key}${set ? '' : ' (optional)'}`);
-});
+print(`LLM_PROVIDER=${provider}`, Boolean(llmKey), llmKey ? `requires ${llmKey}` : 'unsupported provider');
+print(llmKey || 'LLM API key', hasLlm);
+print('At least one platform configured', whatsappEnabled || telegramEnabled, `WhatsApp: ${whatsappEnabled ? 'on' : 'off'}, Telegram: ${telegramEnabled ? 'on' : 'off'}`);
+print('Access allowlist configured', hasAllowlist, 'recommended for private bots');
 
 console.log('');
-checks.forEach((check) => {
-  console.log(`${check.ok ? '✅' : '❌'} ${check.name}`);
-});
+info('ALLOW_AGENT_BASH', flag('ALLOW_AGENT_BASH'), flag('ALLOW_AGENT_BASH') ? 'enabled, trusted deployment only' : 'disabled by default');
+info('ALLOW_AGENT_WRITE', flag('ALLOW_AGENT_WRITE'), flag('ALLOW_AGENT_WRITE') ? 'enabled, trusted deployment only' : 'disabled by default');
+info('GIT_TOKEN', has('GIT_TOKEN'), has('GIT_TOKEN') ? 'set' : 'optional');
+info('GITHUB_REPO', has('GITHUB_REPO'), process.env.GITHUB_REPO || 'optional');
 
-if (missing.length) {
-  console.error(`\n❌ Missing required env vars: ${missing.join(', ')}`);
-  process.exit(1);
-}
+console.log('');
+fileChecks.forEach((check) => print(check.name, check.ok));
 
-const failedChecks = checks.filter((check) => !check.ok);
-if (failedChecks.length) {
-  console.error(`\n❌ Missing required files: ${failedChecks.map((check) => check.name).join(', ')}`);
+const failed = [];
+if (!llmKey) failed.push(`Unsupported LLM_PROVIDER: ${provider}`);
+if (!hasLlm) failed.push(`Missing ${llmKey}`);
+if (!whatsappEnabled && !telegramEnabled) failed.push('Configure TELEGRAM_TOKEN and/or WA_PHONE_NUMBER');
+if (!hasAllowlist) failed.push('Configure ALLOWED_* variables or explicitly set ALLOW_ALL_USERS=true');
+failed.push(...fileChecks.filter((check) => !check.ok).map((check) => check.name));
+
+if (failed.length) {
+  console.error(`\n❌ Preflight failed:\n${failed.map((item) => `- ${item}`).join('\n')}`);
   process.exit(1);
 }
 
