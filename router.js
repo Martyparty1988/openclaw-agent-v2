@@ -3,9 +3,12 @@
 
 const TelegramBot = require('node-telegram-bot-api');
 const MetaAgent = require('./meta-agent');
+const AutoWorker = require('./sub-agents/auto-worker');
 require('dotenv').config();
 
 const meta = new MetaAgent();
+const autoWorker = new AutoWorker(meta);
+meta.setAutoWorker?.(autoWorker);
 
 // ─── Access Control ───────────────────────────────────────────────────────────
 
@@ -70,8 +73,6 @@ async function guardMessage({ platform, userId, rawId, reply }) {
 // ─── WhatsApp ─────────────────────────────────────────────────────────────────
 
 async function startWhatsApp() {
-  // WhatsApp is OFF by default because Baileys/BuilderBot can be fragile on Railway.
-  // Enable only when you really want it and have tested the provider version.
   if (!envFlag('ENABLE_WHATSAPP')) {
     console.log('⚪ WhatsApp disabled by default. Set ENABLE_WHATSAPP=true to enable.');
     return false;
@@ -106,7 +107,7 @@ async function startWhatsApp() {
   }
 
   const waFlow = addKeyword([
-    'execute', 'analyze', 'plan', 'chat', 'improve', 'reset', 'help', 'status',
+    'execute', 'analyze', 'plan', 'chat', 'improve', 'reset', 'help', 'status', 'auto', 'model',
     'exec', 'spusť', 'analyzuj', 'naplánuj', 'zlepši', 'zapomeň', 'pomoc', 'stav',
   ]).addAction(async (ctx, { flowDynamic }) => {
     const reply = async (text) => {
@@ -131,10 +132,7 @@ async function startWhatsApp() {
     phoneNumber: process.env.WA_PHONE_NUMBER,
   });
 
-  adapterProvider.on('ready', () => {
-    console.log('✅ WhatsApp connected and ready.');
-  });
-
+  adapterProvider.on('ready', () => console.log('✅ WhatsApp connected and ready.'));
   createBot({ flow: adapterFlow, provider: adapterProvider, database: null });
 
   console.log('📱 WhatsApp: pairing code will appear in logs...');
@@ -177,10 +175,7 @@ function startTelegram() {
     await meta.handle({ userId, platform: 'telegram', text, reply });
   });
 
-  bot.on('polling_error', (err) => {
-    console.error('❌ Telegram polling error:', err.message);
-  });
-
+  bot.on('polling_error', (err) => console.error('❌ Telegram polling error:', err.message));
   console.log('✅ Telegram bot started.');
   return true;
 }
@@ -211,6 +206,7 @@ async function main() {
 
   const telegramStarted = startTelegram();
   const whatsappStarted = await startWhatsApp();
+  autoWorker.start();
 
   if (!whatsappStarted && !telegramStarted) {
     console.error('❌ No platform configured. Set TELEGRAM_TOKEN and/or ENABLE_WHATSAPP=true with WA_PHONE_NUMBER.');
