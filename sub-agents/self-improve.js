@@ -4,12 +4,13 @@
 // Secrets stay in Railway Variables. This file never stores API keys or tokens.
 
 const Anthropic = require('@anthropic-ai/sdk');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const util = require('util');
 
 const execAsync = util.promisify(exec);
+const execFileAsync = util.promisify(execFile);
 const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
 const WORKDIR = path.resolve(process.env.AGENT_WORKDIR || process.cwd());
 
@@ -23,6 +24,10 @@ const AGENT_FILES = [
   'sub-agents/web-improve.js',
   'sub-agents/email.js',
   'sub-agents/learner.js',
+  'sub-agents/model-presets.js',
+  'sub-agents/git-workspace.js',
+  'sub-agents/auto-worker.js',
+  'scripts/ensure-git-workdir.js',
 ];
 
 function getAnthropicClient() {
@@ -47,8 +52,38 @@ async function isGitRepo() {
   }
 }
 
+async function makeAskPass() {
+  const dir = '/tmp/martybot-git';
+  const file = path.join(dir, 'askpass.sh');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(file, [
+    '#!/bin/sh',
+    'case "$1" in',
+    '  *Username*) echo "x-access-token" ;;',
+    '  *Password*) echo "$GIT_TOKEN" ;;',
+    '  *) echo "" ;;',
+    'esac',
+    '',
+  ].join('\n'), 'utf-8');
+  await fs.chmod(file, 0o700);
+  return file;
+}
+
 async function runGit(args, timeout = 60000) {
-  return execAsync(`git -C "${WORKDIR}" ${args}`, { timeout });
+  const env = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+  };
+
+  if (process.env.GIT_TOKEN) {
+    env.GIT_ASKPASS = await makeAskPass();
+  }
+
+  return execFileAsync('git', ['-C', WORKDIR, ...args], {
+    env,
+    timeout,
+    maxBuffer: 1024 * 1024,
+  });
 }
 
 function explainGitSetup() {
@@ -56,10 +91,12 @@ function explainGitSetup() {
     '⚠️ Git push není aktivní, protože pracovní složka není skutečný git repozitář nebo chybí remote.',
     '',
     'Bezpečné nastavení pro Railway:',
-    '1. Nech tajné hodnoty pouze v Railway Variables.',
-    '2. Nastav AGENT_WORKDIR na složku, kde je skutečně naklonované repo.',
-    '3. Nastav GIT_BRANCH=main.',
-    '4. Volitelně nastav GIT_REMOTE_URL v Railway Variables, nikdy ne v GitHubu.',
+    '1. Tajné hodnoty nech pouze v Railway Variables.',
+    '2. Nastav AGENT_WORKDIR=/data/openclaw-agent-v2.',
+    '3. Nastav GITHUB_REPO=Martyparty1988/openclaw-agent-v2.',
+    '4. Nastav GIT_BRANCH=main.',
+    '5. Nastav GIT_TOKEN s oprávněním Contents: Read and write.',
+    '6. Spusť /git setup.',
     '',
     `Aktuální AGENT_WORKDIR: ${WORKDIR}`,
   ].join('\n');
@@ -160,6 +197,8 @@ async function runTests(onStep) {
     'node --check sub-agents/executor.js',
     'node --check sub-agents/memory.js',
     'node --check sub-agents/self-improve.js',
+    'node --check sub-agents/git-workspace.js',
+    'node --check sub-agents/auto-worker.js',
   ];
 
   const results = [];
@@ -200,24 +239,35 @@ async function revertFixes(fixes, onStep) {
 async function commitAndPush(files, onStep) {
   if (!(await isGitRepo())) return explainGitSetup();
 
-  await runGit('config user.email "martybot@users.noreply.github.com"');
-  await runGit('config user.name "Martybot"');
+  if (!process.env.GIT_TOKEN && !process.env.GIT_REMOTE_URL) {
+    return [
+      '⚠️ Změny jsou lokálně hotové, ale push přeskočen.',
+      'Důvod: chybí GIT_TOKEN nebo GIT_REMOTE_URL v Railway Variables.',
+      'Doporučení: nastav GIT_TOKEN s oprávněním Contents: Read and write a spusť /git setup.',
+    ].join('\n');
+  }
+
+  await runGit(['config', 'user.email', 'martybot@users.noreply.github.com']);
+  await runGit(['config', 'user.name', 'Martybot']);
 
   if (process.env.GIT_REMOTE_URL) {
     onStep('Nastavuji git remote z Railway Variables...');
-    await runGit('remote set-url origin "$GIT_REMOTE_URL"');
+    await runGit(['remote', 'set-url', 'origin', process.env.GIT_REMOTE_URL]);
+  } else {
+    const repo = process.env.GITHUB_REPO || 'Martyparty1988/openclaw-agent-v2';
+    await runGit(['remote', 'set-url', 'origin', `https://github.com/${repo}.git`]);
   }
 
   onStep('Commituju změny...');
-  await runGit(`add ${files.map((file) => `"${file}"`).join(' ')}`);
-  const status = await runGit('status --porcelain');
+  await runGit(['add', ...files]);
+  const status = await runGit(['status', '--porcelain']);
   if (!status.stdout.trim()) return 'ℹ️ Není co commitnout.';
 
-  const msg = `self-improve: update ${files.join(', ')}`.replace(/"/g, '\\"');
-  await runGit(`commit -m "${msg}"`);
+  const msg = `self-improve: update ${files.join(', ')}`;
+  await runGit(['commit', '-m', msg]);
 
   onStep('Pushuju změny na GitHub...');
-  await runGit(`push origin ${process.env.GIT_BRANCH || 'main'}`, 120000);
+  await runGit(['push', 'origin', process.env.GIT_BRANCH || 'main'], 120000);
   return `✅ Pushnuté na GitHub. Commit: ${msg}`;
 }
 
