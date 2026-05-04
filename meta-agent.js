@@ -1,5 +1,5 @@
 // meta-agent.js — Orchestrator that routes tasks to sub-agents
-// Planner → Executor → Memory → SelfImprove → Email
+// Planner → Executor → Memory → SelfImprove → Email → Learner
 
 const Planner = require('./sub-agents/planner');
 const Executor = require('./sub-agents/executor');
@@ -7,19 +7,23 @@ const Memory = require('./sub-agents/memory');
 const SelfImprove = require('./sub-agents/self-improve');
 const WebImprove = require('./sub-agents/web-improve');
 const EmailAgent = require('./sub-agents/email');
+const Learner = require('./sub-agents/learner');
 
 const COMMANDS = {
   email: ['email', 'mail', 'send email', 'pošli email', 'posli email', 'pošli mail', 'posli mail'],
+  learn: ['learn', 'nauč se', 'nauc se', 'načti', 'nacti', 'ulož zdroj', 'uloz zdroj'],
+  backup: ['backup', 'záloha', 'zaloha', 'export memory', 'export paměti', 'export pameti'],
+  restore: ['restore', 'obnov', 'import memory', 'import paměti', 'import pameti'],
   remember: ['remember', 'zapamatuj', 'ulož', 'uloz', 'pamatuj'],
   facts: ['facts', 'poznámky', 'poznamky', 'paměť', 'pamet', 'knowledge'],
   memoryclear: ['clear facts', 'smaž poznámky', 'smaz poznamky', 'clear knowledge'],
   analyze: ['analyze', 'analyzuj', 'analyse'],
   plan: ['plan', 'plán', 'naplánuj'],
-  execute: ['execute', 'exec', 'spusť', 'udělej'],
-  improve: ['improve', 'zlepši', 'self-improve', 'refactor self'],
-  webimprove: ['web improve', 'improve web', 'zlepši web', 'update web'],
-  reset: ['reset', 'zapomeň', 'forget', 'clear'],
-  help: ['start', 'help', 'pomoc', 'příkazy'],
+  execute: ['execute', 'exec', 'spusť', 'spust', 'udělej', 'udelej'],
+  improve: ['improve', 'zlepši', 'zlepsi', 'vylepši', 'vylepsi', 'vylepši svůj kód', 'vylepsi svuj kod', 'self-improve', 'refactor self'],
+  webimprove: ['web improve', 'improve web', 'zlepši web', 'zlepsi web', 'vylepši web', 'vylepsi web', 'update web'],
+  reset: ['reset', 'zapomeň', 'zapomen', 'forget', 'clear'],
+  help: ['start', 'help', 'pomoc', 'příkazy', 'prikazy'],
   status: ['status', 'stav'],
   chat: [],
 };
@@ -44,6 +48,44 @@ function parseCommand(text) {
   return { command: 'chat', task: normalized };
 }
 
+function friendlyError(err) {
+  const raw = [err?.message, err?.stack, JSON.stringify(err || {})].filter(Boolean).join('\n');
+  const lower = raw.toLowerCase();
+
+  if (lower.includes('credit balance is too low') || lower.includes('purchase credits') || lower.includes('plans & billing')) {
+    return 'Claude/Anthropic API nemá kredit. Buď dobij kredit v Anthropic Console, nebo v Railway přepni LLM_PROVIDER=openrouter a použij OPENROUTER_MODEL=openrouter/free.';
+  }
+
+  if (lower.includes('missing authentication header') || lower.includes('401')) {
+    return 'API klíč pro aktuální provider chybí nebo je špatně vložený. Zkontroluj Railway Variables pro LLM_PROVIDER a příslušný API key.';
+  }
+
+  if (lower.includes('invalid api key') || lower.includes('authentication') || lower.includes('unauthorized')) {
+    return 'API klíč je špatný nebo chybí. Zkontroluj v Railway Variables klíč pro aktuální LLM_PROVIDER.';
+  }
+
+  if (lower.includes('not a legal http header value') || lower.includes('bytestring')) {
+    return 'V API klíči je placeholder nebo český znak. Smaž hodnotu typu „tvůj_klíč“ a vlož skutečný API key bez uvozovek a mezer.';
+  }
+
+  if (lower.includes('connection error')) {
+    return 'Connection error při volání AI API. Zkontroluj klíč, kredit/billing a zkus redeploy. Když používáš Claude bez kreditu, přepni na OpenRouter free.';
+  }
+
+  return err?.message || 'Neznámá systémová chyba.';
+}
+
+function splitLongText(text, maxLen = 3600) {
+  const out = [];
+  let rest = String(text || '');
+  while (rest.length > maxLen) {
+    out.push(rest.slice(0, maxLen));
+    rest = rest.slice(maxLen);
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
 class MetaAgent {
   constructor() {
     this.planner = new Planner();
@@ -52,6 +94,7 @@ class MetaAgent {
     this.selfImprove = new SelfImprove();
     this.webImprove = new WebImprove();
     this.email = new EmailAgent();
+    this.learner = new Learner();
   }
 
   async handle(msg) {
@@ -92,6 +135,7 @@ class MetaAgent {
 
           await reply([
             '🩺 Stav bota',
+            `• Jazyk: čeština natvrdo`,
             `• LLM provider: ${provider}`,
             `• Model: ${modelByProvider[provider] || 'neznámý'}`,
             `• API klíč pro provider: ${isTokenSet ? 'nastaven' : 'CHYBÍ'}`,
@@ -111,9 +155,7 @@ class MetaAgent {
         }
 
         case 'email': {
-          if (!task) {
-            return reply('❌ Použití: /email komu@example.com | Předmět | Text zprávy');
-          }
+          if (!task) return reply('❌ Použití: /email komu@example.com | Předmět | Text zprávy');
           await reply('📨 Odesílám email...');
           const info = await this.email.sendFromCommand(task);
           await reply([
@@ -122,6 +164,41 @@ class MetaAgent {
             info.rejected.length ? `• Odmítnuto: ${info.rejected.join(', ')}` : '',
             `• Message ID: ${info.messageId || '—'}`,
           ].filter(Boolean).join('\n'));
+          break;
+        }
+
+        case 'learn': {
+          if (!task) return reply('❌ Použití: /learn <text nebo veřejná URL>');
+          await reply('📚 Učím se ze zdroje...');
+          const learned = await this.learner.learn(task);
+          const item = await this.memory.addKnowledge(userId, learned.content, {
+            source: learned.source,
+            title: learned.title,
+            url: learned.url,
+          });
+          await reply([
+            '✅ Zdroj uložen do trvalé paměti.',
+            `• Název: ${learned.title || 'bez názvu'}`,
+            `• Zdroj: ${learned.url || learned.source}`,
+            `• Délka: ${learned.content.length} znaků`,
+            `• ID: ${item.id}`,
+          ].join('\n'));
+          break;
+        }
+
+        case 'backup': {
+          const backup = await this.memory.exportJson(userId);
+          await reply('📦 Záloha paměti níže. Ulož si ji bezpečně.');
+          for (const chunk of splitLongText(backup, 3500)) {
+            await reply(chunk);
+          }
+          break;
+        }
+
+        case 'restore': {
+          if (!task) return reply('❌ Použití: /restore <JSON záloha z /backup>');
+          const restored = await this.memory.importJson(userId, task, { merge: true });
+          await reply(`✅ Paměť obnovena/sloučena. Zprávy: ${restored.messages.length}, poznámky: ${restored.knowledge.length}.`);
           break;
         }
 
@@ -182,20 +259,12 @@ class MetaAgent {
             try {
               const plan = await this.planner.create(userId, task);
               const result = await this.executor.run(userId, plan, (s) => steps.push(s));
-
               await this.memory.add(userId, 'user', text);
               await this.memory.add(userId, 'assistant', result.output);
-
-              const summary = [
-                '✅ Hotovo!',
-                '',
-                result.output,
-                steps.length ? `\n🔧 ${steps.length} kroků provedeno` : '',
-              ].filter(Boolean).join('\n');
-
+              const summary = ['✅ Hotovo!', '', result.output, steps.length ? `\n🔧 ${steps.length} kroků provedeno` : ''].filter(Boolean).join('\n');
               await reply(summary);
             } catch (err) {
-              await reply(`❌ Chyba: ${err.message}`);
+              await reply(`❌ Chyba: ${friendlyError(err)}`);
             }
           });
           break;
@@ -208,7 +277,7 @@ class MetaAgent {
               const result = await this.selfImprove.run((step) => reply(`⏳ ${step}`));
               await reply(`✅ Self-improve dokončen!\n\n${result}`);
             } catch (err) {
-              await reply(`❌ Self-improve selhal: ${err.message}`);
+              await reply(`❌ Self-improve selhal: ${friendlyError(err)}`);
             }
           });
           break;
@@ -221,7 +290,7 @@ class MetaAgent {
               const result = await this.webImprove.run((step) => reply(`⏳ ${step}`));
               await reply(`✅ Web-improve dokončen!\n\n${result}`);
             } catch (err) {
-              await reply(`❌ Web-improve selhal: ${err.message}`);
+              await reply(`❌ Web-improve selhal: ${friendlyError(err)}`);
             }
           });
           break;
@@ -232,9 +301,12 @@ class MetaAgent {
           await reply('💬 Přemýšlím...');
           const history = await this.memory.getHistory(userId);
           const knowledge = await this.memory.getKnowledgeContext(userId);
-          const enrichedTask = knowledge
-            ? `Relevantní trvalá paměť o uživateli a projektu:\n${knowledge}\n\nAktuální zpráva uživatele:\n${task}`
-            : task;
+          const czechInstruction = 'Vždy odpovídej česky, přátelsky, prakticky a krok za krokem. Nepoužívej polštinu ani angličtinu, pokud o to uživatel výslovně nepožádá.';
+          const enrichedTask = [
+            czechInstruction,
+            knowledge ? `Relevantní trvalá paměť o uživateli a projektu:\n${knowledge}` : '',
+            `Aktuální zpráva uživatele:\n${task}`,
+          ].filter(Boolean).join('\n\n');
           const result = await this.executor.chat(userId, enrichedTask, history);
           await this.memory.add(userId, 'user', task);
           await this.memory.add(userId, 'assistant', result);
@@ -244,17 +316,13 @@ class MetaAgent {
       }
     } catch (err) {
       console.error('[MetaAgent Error]', err);
-      await reply(`❌ Systémová chyba: ${err.message}`);
+      await reply(`❌ Systémová chyba: ${friendlyError(err)}`);
     }
   }
 }
 
 function formatPlan(plan) {
-  return [
-    `📋 ${plan.goal}`,
-    '',
-    ...plan.steps.map((s) => `${s.id}. ${s.action}\n   ${s.details}`),
-  ].join('\n');
+  return [`📋 ${plan.goal}`, '', ...plan.steps.map((s) => `${s.id}. ${s.action}\n   ${s.details}`)].join('\n');
 }
 
 const HELP_TEXT = `🤖 OpenClaw Meta-Agent
@@ -262,6 +330,9 @@ const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 Příkazy:
 • /start nebo /help — nápověda
 • /status — stav providera/modelu/paměti/emailu
+• /learn <text nebo URL> — uloží veřejný zdroj nebo text do znalostí
+• /backup — pošle JSON zálohu paměti
+• /restore <JSON> — obnoví/sloučí zálohu paměti
 • /email komu@example.com | Předmět | Text — odešle email přes SMTP
 • /remember <text> — uloží trvalou poznámku
 • /facts — ukáže trvalé poznámky
@@ -269,9 +340,10 @@ Příkazy:
 • /analyze <co> — analyzuje soubor nebo kód
 • /plan <úkol> — vytvoří plán
 • /execute <úkol> — spustí agenta async
-• /improve — self-improve cyklus
+• /improve nebo vylepši svůj kód — self-improve cyklus
 • /reset — smaže jen konverzační paměť
 
+Jazyk: čeština natvrdo.
 Podporované text-only providery: OpenRouter, DeepSeek, OpenAI.
 Email: SMTP přes Railway Variables.
 Plné nástroje pro práci se soubory a bashem: Anthropic režim + bezpečnostní env flagy.`;
