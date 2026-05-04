@@ -1,15 +1,55 @@
 // sub-agents/memory.js
 // Per-user session memory + permanent knowledge base.
-// Stored as JSON files. For Railway production, set MEMORY_DIR to a mounted Volume path.
+// Default storage: JSON files.
+// Optional online storage: Supabase Postgres when SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set.
 
 const fs = require('fs').promises;
 const path = require('path');
 
+let createClient = null;
+try {
+  ({ createClient } = require('@supabase/supabase-js'));
+} catch {
+  createClient = null;
+}
+
 const MEMORY_DIR = path.resolve(process.env.MEMORY_DIR || './agent-memory');
 const MAX_MESSAGES = Number(process.env.MEMORY_MAX_MESSAGES || 50);
 const MAX_KNOWLEDGE_ITEMS = Number(process.env.MEMORY_MAX_KNOWLEDGE_ITEMS || 500);
+const SUPABASE_TABLE = process.env.SUPABASE_MEMORY_TABLE || 'martybot_memory';
+
+let supabaseClient = null;
+
+function getSupabaseClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY;
+  const enabled = String(process.env.MEMORY_BACKEND || '').toLowerCase() === 'supabase' || Boolean(url && key);
+
+  if (!enabled) return null;
+  if (!url || !key) return null;
+  if (!createClient) throw new Error('@supabase/supabase-js is not installed. Run npm install after deploy.');
+
+  if (!supabaseClient) {
+    supabaseClient = createClient(url, key, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
+
+  return supabaseClient;
+}
+
+function isSupabaseEnabled() {
+  return Boolean(getSupabaseClient());
+}
 
 class Memory {
+  constructor() {
+    this.backend = isSupabaseEnabled() ? 'supabase' : 'json';
+  }
+
   async _ensureDir() {
     await fs.mkdir(MEMORY_DIR, { recursive: true });
   }
@@ -21,15 +61,15 @@ class Memory {
 
   _normalize(data, userId) {
     return {
-      userId: data.userId || userId,
+      userId: data.userId || data.user_id || userId,
       messages: Array.isArray(data.messages) ? data.messages : [],
       knowledge: Array.isArray(data.knowledge) ? data.knowledge : [],
-      createdAt: data.createdAt || new Date().toISOString(),
-      updatedAt: data.updatedAt,
+      createdAt: data.createdAt || data.created_at || new Date().toISOString(),
+      updatedAt: data.updatedAt || data.updated_at,
     };
   }
 
-  async _load(userId) {
+  async _loadJson(userId) {
     try {
       const raw = await fs.readFile(this._filePath(userId), 'utf-8');
       return this._normalize(JSON.parse(raw), userId);
@@ -38,9 +78,54 @@ class Memory {
     }
   }
 
-  async _save(userId, data) {
+  async _saveJson(userId, data) {
     await this._ensureDir();
-    const normalized = this._normalize(data, userId);
+    const normalized = this._trim(this._normalize(data, userId));
+    normalized.updatedAt = new Date().toISOString();
+    await fs.writeFile(this._filePath(userId), JSON.stringify(normalized, null, 2), 'utf-8');
+  }
+
+  async _loadSupabase(userId) {
+    const supabase = getSupabaseClient();
+    if (!supabase) return this._loadJson(userId);
+
+    const { data, error } = await supabase
+      .from(SUPABASE_TABLE)
+      .select('user_id, data, created_at, updated_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Supabase load failed: ${error.message}`);
+    if (!data) return this._normalize({}, userId);
+
+    return this._normalize({
+      ...(data.data || {}),
+      userId: data.user_id,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    }, userId);
+  }
+
+  async _saveSupabase(userId, data) {
+    const supabase = getSupabaseClient();
+    if (!supabase) return this._saveJson(userId, data);
+
+    const normalized = this._trim(this._normalize(data, userId));
+    normalized.updatedAt = new Date().toISOString();
+
+    const { error } = await supabase
+      .from(SUPABASE_TABLE)
+      .upsert({
+        user_id: userId,
+        data: normalized,
+        updated_at: normalized.updatedAt,
+      }, { onConflict: 'user_id' });
+
+    if (error) throw new Error(`Supabase save failed: ${error.message}`);
+  }
+
+  _trim(data) {
+    const normalized = this._normalize(data, data.userId);
 
     if (normalized.messages.length > MAX_MESSAGES) {
       normalized.messages = normalized.messages.slice(-MAX_MESSAGES);
@@ -50,8 +135,17 @@ class Memory {
       normalized.knowledge = normalized.knowledge.slice(-MAX_KNOWLEDGE_ITEMS);
     }
 
-    normalized.updatedAt = new Date().toISOString();
-    await fs.writeFile(this._filePath(userId), JSON.stringify(normalized, null, 2), 'utf-8');
+    return normalized;
+  }
+
+  async _load(userId) {
+    if (isSupabaseEnabled()) return this._loadSupabase(userId);
+    return this._loadJson(userId);
+  }
+
+  async _save(userId, data) {
+    if (isSupabaseEnabled()) return this._saveSupabase(userId, data);
+    return this._saveJson(userId, data);
   }
 
   async add(userId, role, content) {
@@ -129,7 +223,8 @@ class Memory {
     const data = await this.exportData(userId);
     return JSON.stringify({
       type: 'openclaw-memory-backup',
-      version: 1,
+      version: 2,
+      backend: isSupabaseEnabled() ? 'supabase' : 'json',
       exportedAt: new Date().toISOString(),
       data,
     }, null, 2);
@@ -168,7 +263,9 @@ class Memory {
     return {
       messages: data.messages.length,
       knowledge: data.knowledge.length,
+      backend: isSupabaseEnabled() ? 'supabase' : 'json',
       memoryDir: MEMORY_DIR,
+      supabaseTable: SUPABASE_TABLE,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     };
