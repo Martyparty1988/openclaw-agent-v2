@@ -1,13 +1,15 @@
 // meta-agent.js — Orchestrator that routes tasks to sub-agents
-// Planner → Executor → Memory → SelfImprove
+// Planner → Executor → Memory → SelfImprove → Email
 
 const Planner = require('./sub-agents/planner');
 const Executor = require('./sub-agents/executor');
 const Memory = require('./sub-agents/memory');
 const SelfImprove = require('./sub-agents/self-improve');
 const WebImprove = require('./sub-agents/web-improve');
+const EmailAgent = require('./sub-agents/email');
 
 const COMMANDS = {
+  email: ['email', 'mail', 'send email', 'pošli email', 'posli email', 'pošli mail', 'posli mail'],
   remember: ['remember', 'zapamatuj', 'ulož', 'uloz', 'pamatuj'],
   facts: ['facts', 'poznámky', 'poznamky', 'paměť', 'pamet', 'knowledge'],
   memoryclear: ['clear facts', 'smaž poznámky', 'smaz poznamky', 'clear knowledge'],
@@ -49,6 +51,7 @@ class MetaAgent {
     this.memory = new Memory();
     this.selfImprove = new SelfImprove();
     this.webImprove = new WebImprove();
+    this.email = new EmailAgent();
   }
 
   async handle(msg) {
@@ -93,6 +96,8 @@ class MetaAgent {
             `• Model: ${modelByProvider[provider] || 'neznámý'}`,
             `• API klíč pro provider: ${isTokenSet ? 'nastaven' : 'CHYBÍ'}`,
             `• Telegram token: ${process.env.TELEGRAM_TOKEN ? 'nastaven' : 'nenastaven'}`,
+            `• Email SMTP: ${this.email.isConfigured() ? 'nastaven' : 'nenastaven'}`,
+            `• Email účet: ${process.env.SMTP_USER || 'nenastaven'}`,
             `• WhatsApp číslo: ${process.env.WA_PHONE_NUMBER ? 'nastaveno' : 'nenastaveno'}`,
             `• Bash tools: ${process.env.ALLOW_AGENT_BASH === 'true' ? 'zapnuté' : 'vypnuté'}`,
             `• Write tools: ${process.env.ALLOW_AGENT_WRITE === 'true' ? 'zapnuté' : 'vypnuté'}`,
@@ -102,6 +107,21 @@ class MetaAgent {
             '',
             modeNote,
           ].join('\n'));
+          break;
+        }
+
+        case 'email': {
+          if (!task) {
+            return reply('❌ Použití: /email komu@example.com | Předmět | Text zprávy');
+          }
+          await reply('📨 Odesílám email...');
+          const info = await this.email.sendFromCommand(task);
+          await reply([
+            '✅ Email odeslán.',
+            `• Přijato: ${info.accepted.join(', ') || '—'}`,
+            info.rejected.length ? `• Odmítnuto: ${info.rejected.join(', ')}` : '',
+            `• Message ID: ${info.messageId || '—'}`,
+          ].filter(Boolean).join('\n'));
           break;
         }
 
@@ -241,7 +261,8 @@ const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 
 Příkazy:
 • /start nebo /help — nápověda
-• /status — stav providera/modelu/paměti
+• /status — stav providera/modelu/paměti/emailu
+• /email komu@example.com | Předmět | Text — odešle email přes SMTP
 • /remember <text> — uloží trvalou poznámku
 • /facts — ukáže trvalé poznámky
 • /clear facts — smaže trvalé poznámky
@@ -252,6 +273,7 @@ Příkazy:
 • /reset — smaže jen konverzační paměť
 
 Podporované text-only providery: OpenRouter, DeepSeek, OpenAI.
+Email: SMTP přes Railway Variables.
 Plné nástroje pro práci se soubory a bashem: Anthropic režim + bezpečnostní env flagy.`;
 
 module.exports = MetaAgent;
