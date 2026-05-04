@@ -1,12 +1,12 @@
 // sub-agents/planner.js
-// Turns a task description into a structured execution plan using Claude.
+// Turns a task description into a structured execution plan using the selected LLM provider.
 
 const Anthropic = require('@anthropic-ai/sdk');
 
-const PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
+const PROVIDER = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
 const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
-const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-8b-instruct:free';
+const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 const SYSTEM = `You are a Planner agent. Your only job is to decompose tasks into clear, executable steps.
@@ -21,11 +21,10 @@ class Planner {
     try {
       return JSON.parse(text.replace(/```json|```/g, '').trim());
     } catch {
-      // Fallback plan if JSON parse fails
       return {
         goal: task,
         agent: 'general',
-        steps: [{ id: 1, action: 'Execute task', details: task, tool: 'bash' }],
+        steps: [{ id: 1, action: 'Respond with a safe text answer', details: task, tool: 'none' }],
       };
     }
   }
@@ -50,7 +49,7 @@ class Planner {
     }
 
     if (!client) {
-      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter for free models.');
+      throw new Error('ANTHROPIC_API_KEY is missing. For the free mode set LLM_PROVIDER=openrouter and OPENROUTER_MODEL=openrouter/free.');
     }
 
     const response = await client.messages.create({
@@ -60,19 +59,19 @@ class Planner {
       messages: [{ role: 'user', content: `Create an execution plan for: ${task}` }],
     });
 
-    return response.content.filter(b => b.type === 'text').map(b => b.text).join('');
+    return response.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   }
 
   async generateChatCompletionsText(config, task) {
-    if (!config.token) {
-      throw new Error(`${config.tokenLabel} is missing.`);
-    }
+    if (!config.token) throw new Error(`${config.tokenLabel} is missing.`);
 
     const response = await fetch(config.url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.token}`,
         'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/Martyparty1988/openclaw-agent-v2',
+        'X-Title': 'OpenClaw Agent',
       },
       body: JSON.stringify({
         model: config.model,
