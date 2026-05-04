@@ -8,6 +8,7 @@ const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.e
 const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
 
 const SYSTEM = `You are a Planner agent. Your only job is to decompose tasks into clear, executable steps.
 Always return valid JSON only — no markdown, no explanation outside the JSON.
@@ -36,6 +37,17 @@ class Planner {
         token: process.env.OPENROUTER_API_KEY,
         tokenLabel: 'OPENROUTER_API_KEY',
         model: OPENROUTER_MODEL,
+        providerName: 'openrouter',
+      }, task);
+    }
+
+    if (PROVIDER === 'deepseek') {
+      return this.generateChatCompletionsText({
+        url: 'https://api.deepseek.com/chat/completions',
+        token: process.env.DEEPSEEK_API_KEY,
+        tokenLabel: 'DEEPSEEK_API_KEY',
+        model: DEEPSEEK_MODEL,
+        providerName: 'deepseek',
       }, task);
     }
 
@@ -45,6 +57,7 @@ class Planner {
         token: process.env.OPENAI_API_KEY,
         tokenLabel: 'OPENAI_API_KEY',
         model: OPENAI_MODEL,
+        providerName: 'openai',
       }, task);
     }
 
@@ -65,20 +78,26 @@ class Planner {
   async generateChatCompletionsText(config, task) {
     if (!config.token) throw new Error(`${config.tokenLabel} is missing.`);
 
+    const headers = {
+      Authorization: `Bearer ${config.token}`,
+      'Content-Type': 'application/json',
+    };
+
+    if (config.providerName === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://github.com/Martyparty1988/openclaw-agent-v2';
+      headers['X-Title'] = 'OpenClaw Agent';
+    }
+
     const response = await fetch(config.url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/Martyparty1988/openclaw-agent-v2',
-        'X-Title': 'OpenClaw Agent',
-      },
+      headers,
       body: JSON.stringify({
         model: config.model,
         messages: [
           { role: 'system', content: SYSTEM },
           { role: 'user', content: `Create an execution plan for: ${task}` },
         ],
+        response_format: { type: 'json_object' },
         temperature: 0.2,
       }),
     });
