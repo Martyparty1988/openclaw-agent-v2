@@ -5,6 +5,7 @@ const http = require('http');
 const TelegramBot = require('node-telegram-bot-api');
 const MetaAgent = require('./meta-agent');
 const AutoWorker = require('./sub-agents/auto-worker');
+const { memoryBackendStatus } = require('./sub-agents/memory');
 require('dotenv').config();
 
 const meta = new MetaAgent();
@@ -150,6 +151,7 @@ function readJsonBody(req, maxBytes = 20000) {
 
 function publicStatus() {
   const provider = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
+  const memory = memoryBackendStatus();
   const modelByProvider = {
     anthropic: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022',
     openrouter: process.env.OPENROUTER_MODEL || 'openrouter/free',
@@ -167,6 +169,10 @@ function publicStatus() {
     whatsapp: Boolean(process.env.WA_PHONE_NUMBER),
     email: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
     auto: Boolean(autoWorker.enabled),
+    memoryBackend: memory.backend,
+    memorySupabaseRequested: memory.requested,
+    memorySupabaseTable: memory.supabaseTable,
+    memorySupabaseDisabledReason: memory.disabledReason,
     memoryDir: process.env.MEMORY_DIR || './agent-memory',
     gitWorkdir: process.env.AGENT_WORKDIR || process.cwd(),
     bashTools: envFlag('ALLOW_AGENT_BASH'),
