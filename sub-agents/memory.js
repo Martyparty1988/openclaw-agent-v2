@@ -2,6 +2,7 @@
 // Per-user session memory + permanent knowledge base.
 // Default storage: JSON files.
 // Optional online storage: Supabase Postgres when SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set.
+// Important: invalid Supabase config must never crash the bot at startup.
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -19,23 +20,63 @@ const MAX_KNOWLEDGE_ITEMS = Number(process.env.MEMORY_MAX_KNOWLEDGE_ITEMS || 500
 const SUPABASE_TABLE = process.env.SUPABASE_MEMORY_TABLE || 'martybot_memory';
 
 let supabaseClient = null;
+let supabaseDisabledReason = '';
+let supabaseWarningPrinted = false;
+
+function normalizeUrl(value) {
+  return String(value || '').trim().replace(/^['"]|['"]$/g, '');
+}
+
+function getSupabaseConfig() {
+  const url = normalizeUrl(process.env.SUPABASE_URL);
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+  const requested = String(process.env.MEMORY_BACKEND || '').toLowerCase() === 'supabase' || Boolean(url || key);
+  return { url, key, requested };
+}
+
+function warnOnce(message) {
+  if (supabaseWarningPrinted) return;
+  supabaseWarningPrinted = true;
+  console.warn(`[memory] ${message}`);
+}
 
 function getSupabaseClient() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY;
-  const enabled = String(process.env.MEMORY_BACKEND || '').toLowerCase() === 'supabase' || Boolean(url && key);
+  if (supabaseDisabledReason) return null;
 
-  if (!enabled) return null;
-  if (!url || !key) return null;
-  if (!createClient) throw new Error('@supabase/supabase-js is not installed. Run npm install after deploy.');
+  const { url, key, requested } = getSupabaseConfig();
+  if (!requested) return null;
+
+  if (!url || !key) {
+    supabaseDisabledReason = 'SUPABASE_URL nebo SUPABASE_SERVICE_ROLE_KEY chybí. Používám JSON paměť.';
+    warnOnce(supabaseDisabledReason);
+    return null;
+  }
+
+  if (!/^https?:\/\//i.test(url)) {
+    supabaseDisabledReason = 'SUPABASE_URL je neplatná. Musí začínat https://...supabase.co. Používám JSON paměť.';
+    warnOnce(supabaseDisabledReason);
+    return null;
+  }
+
+  if (!createClient) {
+    supabaseDisabledReason = '@supabase/supabase-js není nainstalovaný. Používám JSON paměť.';
+    warnOnce(supabaseDisabledReason);
+    return null;
+  }
 
   if (!supabaseClient) {
-    supabaseClient = createClient(url, key, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    });
+    try {
+      supabaseClient = createClient(url, key, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+    } catch (err) {
+      supabaseDisabledReason = `Supabase client nejde vytvořit: ${err.message}. Používám JSON paměť.`;
+      warnOnce(supabaseDisabledReason);
+      return null;
+    }
   }
 
   return supabaseClient;
@@ -43,6 +84,17 @@ function getSupabaseClient() {
 
 function isSupabaseEnabled() {
   return Boolean(getSupabaseClient());
+}
+
+function memoryBackendStatus() {
+  const { requested, url } = getSupabaseConfig();
+  return {
+    backend: isSupabaseEnabled() ? 'supabase' : 'json',
+    requested,
+    configuredUrl: Boolean(url),
+    supabaseTable: SUPABASE_TABLE,
+    disabledReason: supabaseDisabledReason,
+  };
 }
 
 class Memory {
@@ -260,12 +312,15 @@ class Memory {
 
   async stats(userId) {
     const data = await this._load(userId);
+    const status = memoryBackendStatus();
     return {
       messages: data.messages.length,
       knowledge: data.knowledge.length,
-      backend: isSupabaseEnabled() ? 'supabase' : 'json',
+      backend: status.backend,
       memoryDir: MEMORY_DIR,
       supabaseTable: SUPABASE_TABLE,
+      supabaseRequested: status.requested,
+      supabaseDisabledReason: status.disabledReason,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
     };
@@ -273,3 +328,4 @@ class Memory {
 }
 
 module.exports = Memory;
+module.exports.memoryBackendStatus = memoryBackendStatus;
