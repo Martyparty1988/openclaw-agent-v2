@@ -12,9 +12,9 @@ const util = require('util');
 
 const execAsync = util.promisify(exec);
 const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
-const PROVIDER = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
+const PROVIDER = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
 const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-8b-instruct:free';
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const WORKDIR = path.resolve(process.env.AGENT_WORKDIR || process.cwd());
 
@@ -286,7 +286,12 @@ class Executor {
 
     const response = await fetch(config.url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/Martyparty1988/openclaw-agent-v2',
+        'X-Title': 'OpenClaw Agent',
+      },
       body: JSON.stringify({ model: config.model, messages }),
     });
 
