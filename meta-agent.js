@@ -239,12 +239,16 @@ class MetaAgent {
             `• Autonomní režim: ${this.autoWorker && this.autoWorker.enabled ? 'zapnutý' : 'vypnutý'}`,
             `• Bash tools: ${process.env.ALLOW_AGENT_BASH === 'true' ? 'zapnuté' : 'vypnuté'}`,
             `• Write tools: ${process.env.ALLOW_AGENT_WRITE === 'true' ? 'zapnuté' : 'vypnuté'}`,
+            `• Memory backend: ${stats.backend}`,
+            `• Supabase requested: ${stats.supabaseRequested ? 'ano' : 'ne'}`,
+            `• Supabase table: ${stats.supabaseTable || '—'}`,
+            stats.supabaseDisabledReason ? `• Supabase důvod fallbacku: ${stats.supabaseDisabledReason}` : '',
             `• Zprávy v paměti: ${stats.messages}`,
             `• Trvalé poznámky: ${stats.knowledge}`,
             `• Memory dir: ${stats.memoryDir}`,
             '',
             modeNote(provider),
-          ].join('\n'));
+          ].filter(Boolean).join('\n'));
           break;
         }
 
