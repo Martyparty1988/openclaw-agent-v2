@@ -1,16 +1,16 @@
 {
   "name": "openclaw-agent",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Self-improving autonomous AI agent — WhatsApp + Telegram + Web + Email",
   "main": "router.js",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node router.js",
+    "start": "node scripts/ensure-git-workdir.js && node router.js",
     "dev": "node --watch router.js",
     "web": "npx serve web -p 3000",
-    "check": "node --check router.js && node --check meta-agent.js && node --check sub-agents/email.js",
+    "check": "node --check router.js && node --check meta-agent.js && node --check sub-agents/email.js && node --check sub-agents/learner.js && node --check sub-agents/model-presets.js && node --check scripts/ensure-git-workdir.js",
     "deploy:check": "node scripts/deploy-preflight.js"
   },
   "dependencies": {
