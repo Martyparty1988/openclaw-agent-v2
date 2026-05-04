@@ -37,11 +37,17 @@ function info(name, ok, note = '') {
 
 loadDotEnv();
 
-const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
+const provider = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
 const llmRequirements = {
   anthropic: 'ANTHROPIC_API_KEY',
   openai: 'OPENAI_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
+};
+
+const modelByProvider = {
+  anthropic: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022',
+  openai: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  openrouter: process.env.OPENROUTER_MODEL || 'openrouter/free',
 };
 
 const llmKey = llmRequirements[provider];
@@ -61,6 +67,7 @@ const fileChecks = [
 console.log('🚦 OpenClaw deployment preflight\n');
 
 print(`LLM_PROVIDER=${provider}`, Boolean(llmKey), llmKey ? `requires ${llmKey}` : 'unsupported provider');
+print(`Model=${modelByProvider[provider] || 'unknown'}`, Boolean(modelByProvider[provider]));
 print(llmKey || 'LLM API key', hasLlm);
 print('At least one platform configured', whatsappEnabled || telegramEnabled, `WhatsApp: ${whatsappEnabled ? 'on' : 'off'}, Telegram: ${telegramEnabled ? 'on' : 'off'}`);
 print('Access allowlist configured', hasAllowlist, 'recommended for private bots');
