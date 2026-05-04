@@ -1,5 +1,5 @@
 // meta-agent.js — Orchestrator that routes tasks to sub-agents
-// Planner → Executor → Memory → SelfImprove → Email → Learner → AutoWorker
+// Planner → Executor → Memory → SelfImprove → Email → Learner → AutoWorker → GitWorkspace
 
 const Planner = require('./sub-agents/planner');
 const Executor = require('./sub-agents/executor');
@@ -8,6 +8,7 @@ const SelfImprove = require('./sub-agents/self-improve');
 const WebImprove = require('./sub-agents/web-improve');
 const EmailAgent = require('./sub-agents/email');
 const Learner = require('./sub-agents/learner');
+const GitWorkspace = require('./sub-agents/git-workspace');
 const {
   applyPreset,
   listPresetsText,
@@ -17,6 +18,7 @@ const {
 } = require('./sub-agents/model-presets');
 
 const COMMANDS = {
+  git: ['git', 'git status', 'git setup', 'git pull', 'repo'],
   auto: ['auto', 'autonomně', 'autonomne', 'autonomie', 'autonomní režim', 'autonomni rezim'],
   model: ['model', 'models', 'přepni model', 'prepni model', 'jazykový model', 'jazykovy model'],
   email: ['email', 'mail', 'send email', 'pošli email', 'posli email', 'pošli mail', 'posli mail'],
@@ -45,6 +47,11 @@ function normalizeIncomingText(text) {
 function parseCommand(text) {
   const normalized = normalizeIncomingText(text);
   const lower = normalized.toLowerCase().trim();
+
+  // Keep multi-word git commands usable while still routing to the git handler.
+  if (lower === 'git' || lower.startsWith('git ')) {
+    return { command: 'git', task: normalized.slice(3).trim() };
+  }
 
   for (const [cmd, keywords] of Object.entries(COMMANDS)) {
     for (const kw of keywords) {
@@ -75,6 +82,9 @@ function friendlyError(err) {
   }
   if (lower.includes('connection error')) {
     return 'Connection error při volání AI API. Zkontroluj klíč, kredit/billing a zkus redeploy. Pro free režim použij /model openrouter free.';
+  }
+  if (lower.includes('not found') && lower.includes('git')) {
+    return 'V Railway kontejneru zřejmě není dostupný git. Zkus v Railway build/runtime ověřit, že image obsahuje git, nebo použij Nixpacks/Node runtime s gitem.';
   }
   return err?.message || 'Neznámá systémová chyba.';
 }
@@ -107,6 +117,7 @@ class MetaAgent {
     this.webImprove = new WebImprove();
     this.email = new EmailAgent();
     this.learner = new Learner();
+    this.gitWorkspace = GitWorkspace;
     this.autoWorker = null;
   }
 
@@ -125,6 +136,29 @@ class MetaAgent {
         case 'help':
           await reply(HELP_TEXT);
           break;
+
+        case 'git': {
+          const action = String(task || 'status').trim().toLowerCase();
+          if (!action || action === 'status' || action === 'stav') {
+            const s = await this.gitWorkspace.status();
+            await reply(this.gitWorkspace.formatStatus(s));
+            break;
+          }
+          if (['setup', 'init', 'clone', 'napoj', 'napojit', 'oprav'].includes(action)) {
+            await reply('🧩 Připravuji git workspace v AGENT_WORKDIR...');
+            const out = await this.gitWorkspace.ensure();
+            await reply(out);
+            break;
+          }
+          if (action === 'pull' || action === 'update' || action === 'aktualizuj') {
+            await reply('⬇️ Dělám git pull...');
+            const out = await this.gitWorkspace.pull();
+            await reply(out);
+            break;
+          }
+          await reply('Použití: /git, /git status, /git setup, /git pull');
+          break;
+        }
 
         case 'auto': {
           if (!this.autoWorker) {
@@ -364,6 +398,9 @@ const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 Příkazy:
 • /start nebo /help — nápověda
 • /status — stav providera/modelu/paměti/emailu
+• /git — stav git workspace
+• /git setup — naklonuje/opraví git workspace v AGENT_WORKDIR
+• /git pull — aktualizuje git workspace
 • /auto — stav autonomního režimu
 • /auto on — zapne autonomní režim pro aktuální běh
 • /auto off — vypne autonomní režim pro aktuální běh
