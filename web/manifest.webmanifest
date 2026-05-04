@@ -1,0 +1,19 @@
+{
+  "name": "Martybot Control Center",
+  "short_name": "Martybot",
+  "description": "iOS-friendly web app for controlling Martybot agent.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#071007",
+  "theme_color": "#071007",
+  "icons": [
+    {
+      "src": "/web/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
