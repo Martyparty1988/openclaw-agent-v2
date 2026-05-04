@@ -16,6 +16,7 @@ const PROVIDER = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
 const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
 const WORKDIR = path.resolve(process.env.AGENT_WORKDIR || process.cwd());
 
 function envFlag(name) {
@@ -182,10 +183,11 @@ Summarize what you did at the end.`,
 class Executor {
   async run(userId, planOrTask, onProgress, maxIter = 12) {
     if (PROVIDER === 'openrouter') return this.runOpenRouter(planOrTask);
+    if (PROVIDER === 'deepseek') return this.runDeepSeek(planOrTask);
     if (PROVIDER === 'openai') return this.runOpenAI(planOrTask);
 
     if (!client) {
-      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter/openai for text-only mode.');
+      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter/deepseek/openai for text-only mode.');
     }
 
     const task = typeof planOrTask === 'string'
@@ -230,6 +232,17 @@ class Executor {
         token: process.env.OPENROUTER_API_KEY,
         tokenLabel: 'OPENROUTER_API_KEY',
         model: OPENROUTER_MODEL,
+        providerName: 'openrouter',
+      }, messages);
+    }
+
+    if (PROVIDER === 'deepseek') {
+      return this.chatCompletions({
+        url: 'https://api.deepseek.com/chat/completions',
+        token: process.env.DEEPSEEK_API_KEY,
+        tokenLabel: 'DEEPSEEK_API_KEY',
+        model: DEEPSEEK_MODEL,
+        providerName: 'deepseek',
       }, messages);
     }
 
@@ -239,11 +252,12 @@ class Executor {
         token: process.env.OPENAI_API_KEY,
         tokenLabel: 'OPENAI_API_KEY',
         model: OPENAI_MODEL,
+        providerName: 'openai',
       }, messages);
     }
 
     if (!client) {
-      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter/openai for text-only mode.');
+      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter/deepseek/openai for text-only mode.');
     }
 
     const res = await client.messages.create({ model: MODEL, max_tokens: 1024, system: AGENT_SYSTEMS.general, messages });
@@ -256,6 +270,17 @@ class Executor {
       token: process.env.OPENROUTER_API_KEY,
       tokenLabel: 'OPENROUTER_API_KEY',
       model: OPENROUTER_MODEL,
+      providerName: 'openrouter',
+    });
+  }
+
+  async runDeepSeek(planOrTask) {
+    return this.runTextOnlyProvider('deepseek', planOrTask, {
+      url: 'https://api.deepseek.com/chat/completions',
+      token: process.env.DEEPSEEK_API_KEY,
+      tokenLabel: 'DEEPSEEK_API_KEY',
+      model: DEEPSEEK_MODEL,
+      providerName: 'deepseek',
     });
   }
 
@@ -265,6 +290,7 @@ class Executor {
       token: process.env.OPENAI_API_KEY,
       tokenLabel: 'OPENAI_API_KEY',
       model: OPENAI_MODEL,
+      providerName: 'openai',
     });
   }
 
@@ -284,14 +310,19 @@ class Executor {
   async chatCompletions(config, messages) {
     if (!config.token) throw new Error(`${config.tokenLabel} is missing.`);
 
+    const headers = {
+      Authorization: `Bearer ${config.token}`,
+      'Content-Type': 'application/json',
+    };
+
+    if (config.providerName === 'openrouter') {
+      headers['HTTP-Referer'] = 'https://github.com/Martyparty1988/openclaw-agent-v2';
+      headers['X-Title'] = 'OpenClaw Agent';
+    }
+
     const response = await fetch(config.url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/Martyparty1988/openclaw-agent-v2',
-        'X-Title': 'OpenClaw Agent',
-      },
+      headers,
       body: JSON.stringify({ model: config.model, messages }),
     });
 
