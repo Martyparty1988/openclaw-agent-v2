@@ -70,13 +70,13 @@ async function status() {
   const gitDir = path.join(cfg.workdir, '.git');
   const hasWorkdir = await exists(cfg.workdir);
   const hasGit = await exists(gitDir);
-  let branch = '';
+  let currentBranch = '';
   let remote = '';
   let lastCommit = '';
   let dirty = '';
 
   if (hasGit) {
-    try { branch = (await git(['branch', '--show-current'], cfg.workdir)).stdout; } catch {}
+    try { currentBranch = (await git(['branch', '--show-current'], cfg.workdir)).stdout; } catch {}
     try { remote = (await git(['remote', 'get-url', 'origin'], cfg.workdir)).stdout.replace(/x-access-token:[^@]+@/g, 'x-access-token:***@'); } catch {}
     try { lastCommit = (await git(['log', '-1', '--oneline'], cfg.workdir)).stdout; } catch {}
     try { dirty = (await git(['status', '--porcelain'], cfg.workdir)).stdout ? 'ano' : 'ne'; } catch {}
@@ -84,12 +84,12 @@ async function status() {
 
   return {
     ...cfg,
-    hasWorkdir,
-    hasGit,
-    branch,
+    currentBranch,
     remote,
     lastCommit,
     dirty,
+    hasWorkdir,
+    hasGit,
   };
 }
 
@@ -97,7 +97,7 @@ function formatStatus(s) {
   return [
     '🧩 Git workspace',
     `• Repo: ${s.repo}`,
-    `• Branch: ${s.branch || s.branch === '' ? (s.branch || s.branch === '' && s.hasGit ? 'neznámá' : s.branch) : s.branch}`,
+    `• Branch: ${s.currentBranch || (s.hasGit ? 'neznámá' : '—')}`,
     `• Cílová branch: ${s.branch || 'main'}`,
     `• Workdir: ${s.workdir}`,
     `• Složka existuje: ${s.hasWorkdir ? 'ano' : 'ne'}`,
@@ -107,6 +107,40 @@ function formatStatus(s) {
     s.lastCommit ? `• Poslední commit: ${s.lastCommit}` : '',
     s.dirty ? `• Lokální změny: ${s.dirty}` : '',
   ].filter(Boolean).join('\n');
+}
+
+function stamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-');
+}
+
+async function stashIfNeeded(workdir) {
+  const dirty = (await git(['status', '--porcelain'], workdir)).stdout;
+  if (!dirty.trim()) return '';
+
+  const stashName = `martybot-autostash-${stamp()}`;
+  await git(['stash', 'push', '-u', '-m', stashName], workdir);
+  return stashName;
+}
+
+async function hardSyncToOrigin(workdir, branch) {
+  const messages = [];
+  const backupBranch = `backup/railway-${stamp()}`;
+
+  try {
+    await git(['branch', backupBranch], workdir);
+    messages.push(`• Backup branch: ${backupBranch}`);
+  } catch {
+    messages.push('• Backup branch: nepodařilo se vytvořit, pokračuji resetem');
+  }
+
+  const stashName = await stashIfNeeded(workdir);
+  if (stashName) messages.push(`• Lokální necommitnuté změny odloženy do stash: ${stashName}`);
+
+  await git(['reset', '--hard', `origin/${branch}`], workdir);
+  await git(['clean', '-fd'], workdir);
+  messages.push(`• Workspace srovnán na origin/${branch}`);
+
+  return messages;
 }
 
 async function ensure() {
@@ -129,19 +163,43 @@ async function ensure() {
 
   await git(['remote', 'set-url', 'origin', remote], cfg.workdir);
   await git(['fetch', 'origin', cfg.branch], cfg.workdir);
-  await git(['checkout', cfg.branch], cfg.workdir);
-  await git(['pull', '--ff-only', 'origin', cfg.branch], cfg.workdir);
+
+  const notes = [];
+  try {
+    await git(['checkout', cfg.branch], cfg.workdir);
+  } catch {
+    await git(['checkout', '-B', cfg.branch, `origin/${cfg.branch}`], cfg.workdir);
+    notes.push(`• Lokální branch ${cfg.branch} byla znovu vytvořena z origin/${cfg.branch}`);
+  }
+
+  try {
+    await git(['pull', '--ff-only', 'origin', cfg.branch], cfg.workdir);
+    notes.push('• Pull fast-forward proběhl OK');
+  } catch (err) {
+    notes.push('• Pull fast-forward nešel — větve se rozešly, dělám bezpečný reset podle GitHubu');
+    notes.push(...await hardSyncToOrigin(cfg.workdir, cfg.branch));
+  }
 
   const s = await status();
-  return `✅ Git workspace aktualizovaný.\n\n${formatStatus(s)}`;
+  return `✅ Git workspace připravený.\n${notes.join('\n')}\n\n${formatStatus(s)}`;
 }
 
 async function pull() {
   const cfg = getConfig();
   if (!(await exists(path.join(cfg.workdir, '.git')))) throw new Error('Chybí .git. Nejdřív spusť /git setup.');
-  await git(['pull', '--ff-only', 'origin', cfg.branch], cfg.workdir);
+
+  await git(['fetch', 'origin', cfg.branch], cfg.workdir);
+  const notes = [];
+  try {
+    await git(['pull', '--ff-only', 'origin', cfg.branch], cfg.workdir);
+    notes.push('• Pull fast-forward proběhl OK');
+  } catch {
+    notes.push('• Pull fast-forward nešel — větve se rozešly, dělám bezpečný reset podle GitHubu');
+    notes.push(...await hardSyncToOrigin(cfg.workdir, cfg.branch));
+  }
+
   const s = await status();
-  return `✅ Pull hotový.\n\n${formatStatus(s)}`;
+  return `✅ Pull/sync hotový.\n${notes.join('\n')}\n\n${formatStatus(s)}`;
 }
 
 module.exports = {
