@@ -1,5 +1,5 @@
 // meta-agent.js — Orchestrator that routes tasks to sub-agents
-// Planner → Executor → Memory → SelfImprove → Email → Learner
+// Planner → Executor → Memory → SelfImprove → Email → Learner → AutoWorker
 
 const Planner = require('./sub-agents/planner');
 const Executor = require('./sub-agents/executor');
@@ -17,6 +17,7 @@ const {
 } = require('./sub-agents/model-presets');
 
 const COMMANDS = {
+  auto: ['auto', 'autonomně', 'autonomne', 'autonomie', 'autonomní režim', 'autonomni rezim'],
   model: ['model', 'models', 'přepni model', 'prepni model', 'jazykový model', 'jazykovy model'],
   email: ['email', 'mail', 'send email', 'pošli email', 'posli email', 'pošli mail', 'posli mail'],
   learn: ['learn', 'nauč se', 'nauc se', 'načti', 'nacti', 'ulož zdroj', 'uloz zdroj'],
@@ -63,23 +64,18 @@ function friendlyError(err) {
   if (lower.includes('credit balance is too low') || lower.includes('purchase credits') || lower.includes('plans & billing')) {
     return 'Claude/Anthropic API nemá kredit. Buď dobij kredit v Anthropic Console, nebo použij /model openrouter free.';
   }
-
   if (lower.includes('missing authentication header') || lower.includes('401')) {
     return 'API klíč pro aktuální provider chybí nebo je špatně vložený. Zkontroluj Railway Variables pro aktuální model.';
   }
-
   if (lower.includes('invalid api key') || lower.includes('authentication') || lower.includes('unauthorized')) {
     return 'API klíč je špatný nebo chybí. Zkontroluj Railway Variables klíč pro aktuální LLM provider.';
   }
-
   if (lower.includes('not a legal http header value') || lower.includes('bytestring')) {
     return 'V API klíči je placeholder nebo český znak. Smaž hodnotu typu „tvůj_klíč“ a vlož skutečný API key bez uvozovek a mezer.';
   }
-
   if (lower.includes('connection error')) {
     return 'Connection error při volání AI API. Zkontroluj klíč, kredit/billing a zkus redeploy. Pro free režim použij /model openrouter free.';
   }
-
   return err?.message || 'Neznámá systémová chyba.';
 }
 
@@ -111,6 +107,11 @@ class MetaAgent {
     this.webImprove = new WebImprove();
     this.email = new EmailAgent();
     this.learner = new Learner();
+    this.autoWorker = null;
+  }
+
+  setAutoWorker(autoWorker) {
+    this.autoWorker = autoWorker;
   }
 
   async handle(msg) {
@@ -125,24 +126,56 @@ class MetaAgent {
           await reply(HELP_TEXT);
           break;
 
-        case 'model': {
-          if (!task) {
-            const current = statusSummary();
-            await reply([
-              listPresetsText(),
-              '',
-              `Aktuálně: ${current.provider} / ${current.model}`,
-              `API klíč pro aktuální provider: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`,
-            ].join('\n'));
+        case 'auto': {
+          if (!this.autoWorker) {
+            await reply('❌ Autonomní worker není připojený v routeru.');
             break;
           }
 
+          const action = String(task || 'status').trim().toLowerCase();
+          if (!action || action === 'status' || action === 'stav') {
+            await reply(this.autoWorker.statusText());
+            break;
+          }
+          if (action === 'on' || action === 'zapnout') {
+            this.autoWorker.enable(userId);
+            await reply([
+              '✅ Autonomní režim zapnutý pro aktuální běh procesu.',
+              '',
+              this.autoWorker.statusText(),
+              '',
+              'Natrvalo nastav v Railway Variables: AUTO_MODE=true a AUTO_USER_ID=' + userId,
+            ].join('\n'));
+            break;
+          }
+          if (action === 'off' || action === 'vypnout') {
+            this.autoWorker.stop();
+            await reply('🛑 Autonomní režim vypnutý pro aktuální běh procesu. Natrvalo nastav AUTO_MODE=false v Railway.');
+            break;
+          }
+          if (action === 'run' || action === 'teď' || action === 'ted') {
+            await reply('🤖 Spouštím jednorázový auto audit...');
+            this.autoWorker.userId = userId;
+            await this.autoWorker.tick();
+            await reply(this.autoWorker.statusText());
+            break;
+          }
+
+          await reply('Použití: /auto, /auto on, /auto off, /auto run, /auto status');
+          break;
+        }
+
+        case 'model': {
+          if (!task) {
+            const current = statusSummary();
+            await reply([listPresetsText(), '', `Aktuálně: ${current.provider} / ${current.model}`, `API klíč pro aktuální provider: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`].join('\n'));
+            break;
+          }
           const selected = applyPreset(task);
           if (!selected) {
             await reply(`❌ Neznámý model preset: ${task}\n\n${listPresetsText()}`);
             break;
           }
-
           const current = statusSummary();
           await reply([
             '✅ Model přepnut pro aktuálně běžící bot proces.',
@@ -159,7 +192,6 @@ class MetaAgent {
           const provider = getProvider();
           const stats = await this.memory.stats(userId);
           const current = statusSummary();
-
           await reply([
             '🩺 Stav bota',
             `• Jazyk: čeština natvrdo`,
@@ -170,6 +202,7 @@ class MetaAgent {
             `• Email SMTP: ${this.email.isConfigured() ? 'nastaven' : 'nenastaven'}`,
             `• Email účet: ${process.env.SMTP_USER || 'nenastaven'}`,
             `• WhatsApp číslo: ${process.env.WA_PHONE_NUMBER ? 'nastaveno' : 'nenastaveno'}`,
+            `• Autonomní režim: ${this.autoWorker && this.autoWorker.enabled ? 'zapnutý' : 'vypnutý'}`,
             `• Bash tools: ${process.env.ALLOW_AGENT_BASH === 'true' ? 'zapnuté' : 'vypnuté'}`,
             `• Write tools: ${process.env.ALLOW_AGENT_WRITE === 'true' ? 'zapnuté' : 'vypnuté'}`,
             `• Zprávy v paměti: ${stats.messages}`,
@@ -185,12 +218,7 @@ class MetaAgent {
           if (!task) return reply('❌ Použití: /email komu@example.com | Předmět | Text zprávy');
           await reply('📨 Odesílám email...');
           const info = await this.email.sendFromCommand(task);
-          await reply([
-            '✅ Email odeslán.',
-            `• Přijato: ${info.accepted.join(', ') || '—'}`,
-            info.rejected.length ? `• Odmítnuto: ${info.rejected.join(', ')}` : '',
-            `• Message ID: ${info.messageId || '—'}`,
-          ].filter(Boolean).join('\n'));
+          await reply(['✅ Email odeslán.', `• Přijato: ${info.accepted.join(', ') || '—'}`, info.rejected.length ? `• Odmítnuto: ${info.rejected.join(', ')}` : '', `• Message ID: ${info.messageId || '—'}`].filter(Boolean).join('\n'));
           break;
         }
 
@@ -198,18 +226,8 @@ class MetaAgent {
           if (!task) return reply('❌ Použití: /learn <text nebo veřejná URL>');
           await reply('📚 Učím se ze zdroje...');
           const learned = await this.learner.learn(task);
-          const item = await this.memory.addKnowledge(userId, learned.content, {
-            source: learned.source,
-            title: learned.title,
-            url: learned.url,
-          });
-          await reply([
-            '✅ Zdroj uložen do trvalé paměti.',
-            `• Název: ${learned.title || 'bez názvu'}`,
-            `• Zdroj: ${learned.url || learned.source}`,
-            `• Délka: ${learned.content.length} znaků`,
-            `• ID: ${item.id}`,
-          ].join('\n'));
+          const item = await this.memory.addKnowledge(userId, learned.content, { source: learned.source, title: learned.title, url: learned.url });
+          await reply(['✅ Zdroj uložen do trvalé paměti.', `• Název: ${learned.title || 'bez názvu'}`, `• Zdroj: ${learned.url || learned.source}`, `• Délka: ${learned.content.length} znaků`, `• ID: ${item.id}`].join('\n'));
           break;
         }
 
@@ -237,11 +255,7 @@ class MetaAgent {
         case 'facts': {
           const items = await this.memory.listKnowledge(userId, 20);
           if (!items.length) return reply('ℹ️ Zatím nemám uložené žádné trvalé poznámky. Použij: /remember ...');
-          await reply([
-            `🧠 Trvalá paměť (${items.length} posledních položek):`,
-            '',
-            ...items.map((item, index) => `${index + 1}. ${item.content.slice(0, 500)}\n   ID: ${item.id}`),
-          ].join('\n'));
+          await reply([`🧠 Trvalá paměť (${items.length} posledních položek):`, '', ...items.map((item, index) => `${index + 1}. ${item.content.slice(0, 500)}\n   ID: ${item.id}`)].join('\n'));
           break;
         }
 
@@ -326,11 +340,7 @@ class MetaAgent {
           const history = await this.memory.getHistory(userId);
           const knowledge = await this.memory.getKnowledgeContext(userId);
           const czechInstruction = 'Vždy odpovídej česky, přátelsky, prakticky a krok za krokem. Nepoužívej polštinu ani angličtinu, pokud o to uživatel výslovně nepožádá.';
-          const enrichedTask = [
-            czechInstruction,
-            knowledge ? `Relevantní trvalá paměť o uživateli a projektu:\n${knowledge}` : '',
-            `Aktuální zpráva uživatele:\n${task}`,
-          ].filter(Boolean).join('\n\n');
+          const enrichedTask = [czechInstruction, knowledge ? `Relevantní trvalá paměť o uživateli a projektu:\n${knowledge}` : '', `Aktuální zpráva uživatele:\n${task}`].filter(Boolean).join('\n\n');
           const result = await this.executor.chat(userId, enrichedTask, history);
           await this.memory.add(userId, 'user', task);
           await this.memory.add(userId, 'assistant', result);
@@ -354,21 +364,18 @@ const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 Příkazy:
 • /start nebo /help — nápověda
 • /status — stav providera/modelu/paměti/emailu
+• /auto — stav autonomního režimu
+• /auto on — zapne autonomní režim pro aktuální běh
+• /auto off — vypne autonomní režim pro aktuální běh
+• /auto run — spustí jednorázový auto audit
 • /model — vypíše dostupné modely
 • /model openrouter free — přepne na free OpenRouter router
-• /model openrouter qwen — přepne na Qwen free přes OpenRouter
-• /model openrouter llama — přepne na Llama free přes OpenRouter
-• /model openrouter deepseek — zkusí DeepSeek free přes OpenRouter
-• /model deepseek flash — přepne na přímé DeepSeek API
-• /model openai mini — přepne na OpenAI API
-• /model anthropic sonnet — přepne na Claude API
 • /learn <text nebo URL> — uloží veřejný zdroj nebo text do znalostí
 • /backup — pošle JSON zálohu paměti
 • /restore <JSON> — obnoví/sloučí zálohu paměti
 • /email komu@example.com | Předmět | Text — odešle email přes SMTP
 • /remember <text> — uloží trvalou poznámku
 • /facts — ukáže trvalé poznámky
-• /clear facts — smaže trvalé poznámky
 • /analyze <co> — analyzuje soubor nebo kód
 • /plan <úkol> — vytvoří plán
 • /execute <úkol> — spustí agenta async
@@ -376,7 +383,7 @@ Příkazy:
 • /reset — smaže jen konverzační paměť
 
 Jazyk: čeština natvrdo.
-Přepnutí /model přes chat platí do restartu/redeploye. Natrvalo se nastavuje přes Railway Variables.
+Autonomní zápisy kódu vyžadují AUTO_IMPROVE=true a ALLOW_AUTONOMOUS_WRITES=true v Railway.
 Klíče zůstávají pouze v Railway Variables.`;
 
 module.exports = MetaAgent;
