@@ -6,6 +6,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const Memory = require('./memory');
+const GitWorkspace = require('./git-workspace');
 const { statusSummary } = require('./model-presets');
 
 function envFlag(name) {
@@ -101,11 +102,25 @@ class AutoWorker {
     checks.push(`Write tools: ${envFlag('ALLOW_AGENT_WRITE') ? 'zapnuté' : 'vypnuté'}`);
     checks.push(`Autonomní zápisy: ${envFlag('ALLOW_AUTONOMOUS_WRITES') ? 'povolené' : 'zakázané'}`);
 
+    let gitOk = false;
     try {
       await fs.access(path.join(workdir, '.git'));
+      gitOk = true;
       checks.push('Git workspace: OK, .git existuje');
     } catch {
       checks.push('Git workspace: chybí .git, self-improve neumí pushovat');
+    }
+
+    if (!gitOk && envFlag('GIT_AUTO_SETUP')) {
+      try {
+        checks.push('Git auto setup: zapnuto, zkouším opravit workspace...');
+        await GitWorkspace.ensure();
+        checks.push('Git auto setup: hotovo');
+      } catch (err) {
+        checks.push(`Git auto setup: selhalo — ${err.message}`);
+      }
+    } else if (!gitOk) {
+      checks.push('Git auto setup: vypnuto, nastav GIT_AUTO_SETUP=true nebo spusť /git setup');
     }
 
     const stats = await this.memory.stats(this.userId);
@@ -128,7 +143,8 @@ class AutoWorker {
       'Bezpečnost:',
       `• AUTO_IMPROVE: ${envFlag('AUTO_IMPROVE') ? 'true' : 'false'}`,
       `• ALLOW_AUTONOMOUS_WRITES: ${envFlag('ALLOW_AUTONOMOUS_WRITES') ? 'true' : 'false'}`,
-      'Autonomní změny kódu se spustí jen když jsou obě proměnné true.',
+      `• GIT_AUTO_SETUP: ${envFlag('GIT_AUTO_SETUP') ? 'true' : 'false'}`,
+      'Autonomní změny kódu se spustí jen když jsou AUTO_IMPROVE=true a ALLOW_AUTONOMOUS_WRITES=true.',
     ].join('\n');
   }
 }
