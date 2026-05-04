@@ -24,8 +24,6 @@ const COMMANDS = {
 
 function normalizeIncomingText(text) {
   const raw = String(text || '').trim();
-  // Telegram commands arrive as /status or /status@BotName.
-  // Internally we parse them as plain commands: status.
   return raw.replace(/^\/+/, '').replace(/^([^\s@]+)@[^\s]+/, '$1');
 }
 
@@ -71,19 +69,23 @@ class MetaAgent {
           const tokenByProvider = {
             anthropic: !!process.env.ANTHROPIC_API_KEY,
             openrouter: !!process.env.OPENROUTER_API_KEY,
+            deepseek: !!process.env.DEEPSEEK_API_KEY,
             openai: !!process.env.OPENAI_API_KEY,
           };
           const modelByProvider = {
             anthropic: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022',
             openrouter: process.env.OPENROUTER_MODEL || 'openrouter/free',
+            deepseek: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
             openai: process.env.OPENAI_MODEL || 'gpt-4o-mini',
           };
           const isTokenSet = tokenByProvider[provider];
           const modeNote = provider === 'openrouter'
             ? 'Free OpenRouter režim je text-only. Pro opravdové tools použij Anthropic.'
-            : provider === 'anthropic'
-              ? 'Anthropic režim podporuje tool-calling executor.'
-              : 'OpenAI režim je v této verzi text-only.';
+            : provider === 'deepseek'
+              ? 'DeepSeek režim je text-only provider přes OpenAI-compatible API.'
+              : provider === 'anthropic'
+                ? 'Anthropic režim podporuje tool-calling executor.'
+                : 'OpenAI režim je v této verzi text-only.';
 
           await reply([
             '🩺 Stav bota',
@@ -249,7 +251,7 @@ Příkazy:
 • /improve — self-improve cyklus
 • /reset — smaže jen konverzační paměť
 
-Výchozí free režim: OpenRouter openrouter/free.
+Podporované text-only providery: OpenRouter, DeepSeek, OpenAI.
 Plné nástroje pro práci se soubory a bashem: Anthropic režim + bezpečnostní env flagy.`;
 
 module.exports = MetaAgent;
