@@ -57,7 +57,7 @@ function isAuthorized({ platform, userId, rawId }) {
   }
 
   if (platform === 'web') {
-    candidates.add(String(userId || 'web'));
+    candidates.add(String(userId || 'web_user'));
     for (const id of splitEnv('ALLOWED_WEB_USER_IDS')) genericAllowed.add(id);
   }
 
@@ -82,10 +82,21 @@ function getAllowedOrigins() {
   return splitEnv('WEB_ALLOWED_ORIGINS');
 }
 
+function wildcardOriginMatch(origin, pattern) {
+  if (pattern === '*') return true;
+  if (!pattern.includes('*')) return origin === pattern;
+
+  const escaped = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`).test(origin);
+}
+
 function isOriginAllowed(origin) {
+  if (!origin) return true;
   const allowed = getAllowedOrigins();
   if (!allowed.length) return true;
-  return allowed.includes(origin);
+  return allowed.some((pattern) => wildcardOriginMatch(origin, pattern));
 }
 
 function setCors(req, res) {
@@ -98,6 +109,7 @@ function setCors(req, res) {
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Agent-Token');
+  res.setHeader('Access-Control-Max-Age', '86400');
 }
 
 function sendJson(res, status, payload) {
@@ -159,6 +171,8 @@ function publicStatus() {
     gitWorkdir: process.env.AGENT_WORKDIR || process.cwd(),
     bashTools: envFlag('ALLOW_AGENT_BASH'),
     writeTools: envFlag('ALLOW_AGENT_WRITE'),
+    webApiToken: Boolean(process.env.WEB_API_TOKEN),
+    allowedOrigins: getAllowedOrigins().length ? getAllowedOrigins() : ['any'],
   };
 }
 
@@ -186,6 +200,7 @@ function startHttpApi() {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/chat') {
+        const tokenProtected = Boolean(process.env.WEB_API_TOKEN);
         if (!isApiAuthorized(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
 
         const body = await readJsonBody(req);
@@ -199,8 +214,12 @@ function startHttpApi() {
           for (const chunk of chunkText(messageText, 3800)) replies.push(chunk);
         };
 
-        const allowed = await guardMessage({ platform: 'web', userId, rawId: userId, reply });
-        if (!allowed) return sendJson(res, 403, { ok: false, replies, error: 'Forbidden' });
+        // If WEB_API_TOKEN is set and valid, the web caller is already authenticated.
+        // Without WEB_API_TOKEN, fall back to allowlist checks.
+        if (!tokenProtected) {
+          const allowed = await guardMessage({ platform: 'web', userId, rawId: userId, reply });
+          if (!allowed) return sendJson(res, 403, { ok: false, replies, error: 'Forbidden' });
+        }
 
         await meta.handle({ userId, platform: 'web', text, reply });
         return sendJson(res, 200, { ok: true, replies });
@@ -364,8 +383,8 @@ async function main() {
     process.exit(1);
   }
 
-  if (!isAllowAllEnabled() && !splitEnv('ALLOWED_USER_IDS').length && !splitEnv('ALLOWED_TELEGRAM_CHAT_IDS').length && !splitEnv('ALLOWED_WHATSAPP_NUMBERS').length && !splitEnv('ALLOWED_WEB_USER_IDS').length) {
-    console.warn('⚠️ No allowlist configured. All users will be blocked until you set ALLOWED_* variables or ALLOW_ALL_USERS=true.');
+  if (!isAllowAllEnabled() && !splitEnv('ALLOWED_USER_IDS').length && !splitEnv('ALLOWED_TELEGRAM_CHAT_IDS').length && !splitEnv('ALLOWED_WHATSAPP_NUMBERS').length && !splitEnv('ALLOWED_WEB_USER_IDS').length && !process.env.WEB_API_TOKEN) {
+    console.warn('⚠️ No allowlist/API token configured. Web without WEB_API_TOKEN requires ALLOWED_WEB_USER_IDS or ALLOW_ALL_USERS=true.');
   }
 }
 
