@@ -1,8 +1,6 @@
-// router.js — Unified message router for WhatsApp + Telegram
-// Railway-ready: WhatsApp pairing code + Telegram polling
+// router.js — Unified message router for Telegram + optional WhatsApp
+// Railway-ready: Telegram by default, WhatsApp only when ENABLE_WHATSAPP=true
 
-const { createBot, createProvider, createFlow, addKeyword } = require('@builderbot/bot');
-const BaileysProvider = require('@builderbot/provider-baileys');
 const TelegramBot = require('node-telegram-bot-api');
 const MetaAgent = require('./meta-agent');
 require('dotenv').config();
@@ -18,12 +16,16 @@ function splitEnv(name) {
     .filter(Boolean);
 }
 
+function envFlag(name) {
+  return String(process.env[name] || '').toLowerCase() === 'true';
+}
+
 function digitsOnly(value) {
   return String(value || '').replace(/\D/g, '');
 }
 
 function isAllowAllEnabled() {
-  return String(process.env.ALLOW_ALL_USERS || '').toLowerCase() === 'true';
+  return envFlag('ALLOW_ALL_USERS');
 }
 
 function isAuthorized({ platform, userId, rawId }) {
@@ -67,28 +69,15 @@ async function guardMessage({ platform, userId, rawId, reply }) {
 
 // ─── WhatsApp ─────────────────────────────────────────────────────────────────
 
-const waFlow = addKeyword([
-  'execute', 'analyze', 'plan', 'chat', 'improve', 'reset', 'help', 'status',
-  'exec', 'spusť', 'analyzuj', 'naplánuj', 'zlepši', 'zapomeň', 'pomoc', 'stav',
-]).addAction(async (ctx, { flowDynamic }) => {
-  const reply = async (text) => {
-    const chunks = chunkText(text, 3800);
-    for (const chunk of chunks) await flowDynamic(chunk);
-  };
-
-  const rawId = ctx.from;
-  const userId = digitsOnly(rawId) || String(rawId || 'unknown');
-  const text = String(ctx.body || '').trim();
-  if (!text) return;
-
-  const allowed = await guardMessage({ platform: 'whatsapp', userId, rawId, reply });
-  if (!allowed) return;
-
-  await meta.handle({ userId, platform: 'whatsapp', text, reply });
-});
-
 async function startWhatsApp() {
-  if (String(process.env.DISABLE_WHATSAPP || '').toLowerCase() === 'true') {
+  // WhatsApp is OFF by default because Baileys/BuilderBot can be fragile on Railway.
+  // Enable only when you really want it and have tested the provider version.
+  if (!envFlag('ENABLE_WHATSAPP')) {
+    console.log('⚪ WhatsApp disabled by default. Set ENABLE_WHATSAPP=true to enable.');
+    return false;
+  }
+
+  if (envFlag('DISABLE_WHATSAPP')) {
     console.log('⚪ WhatsApp disabled by DISABLE_WHATSAPP=true.');
     return false;
   }
@@ -97,6 +86,44 @@ async function startWhatsApp() {
     console.log('⚪ WA_PHONE_NUMBER not set — WhatsApp disabled.');
     return false;
   }
+
+  let builderbot;
+  let providerModule;
+  try {
+    builderbot = require('@builderbot/bot');
+    providerModule = require('@builderbot/provider-baileys');
+  } catch (err) {
+    console.error('❌ WhatsApp dependencies failed to load:', err.message);
+    return false;
+  }
+
+  const { createBot, createProvider, createFlow, addKeyword } = builderbot;
+  const BaileysProvider = providerModule?.default || providerModule?.BaileysProvider || providerModule;
+
+  if (typeof BaileysProvider !== 'function') {
+    console.error('❌ WhatsApp provider is not a constructor. Keep ENABLE_WHATSAPP=false or adjust @builderbot/provider-baileys import.');
+    return false;
+  }
+
+  const waFlow = addKeyword([
+    'execute', 'analyze', 'plan', 'chat', 'improve', 'reset', 'help', 'status',
+    'exec', 'spusť', 'analyzuj', 'naplánuj', 'zlepši', 'zapomeň', 'pomoc', 'stav',
+  ]).addAction(async (ctx, { flowDynamic }) => {
+    const reply = async (text) => {
+      const chunks = chunkText(text, 3800);
+      for (const chunk of chunks) await flowDynamic(chunk);
+    };
+
+    const rawId = ctx.from;
+    const userId = digitsOnly(rawId) || String(rawId || 'unknown');
+    const text = String(ctx.body || '').trim();
+    if (!text) return;
+
+    const allowed = await guardMessage({ platform: 'whatsapp', userId, rawId, reply });
+    if (!allowed) return;
+
+    await meta.handle({ userId, platform: 'whatsapp', text, reply });
+  });
 
   const adapterFlow = createFlow([waFlow]);
   const adapterProvider = createProvider(BaileysProvider, {
@@ -118,7 +145,7 @@ async function startWhatsApp() {
 // ─── Telegram ─────────────────────────────────────────────────────────────────
 
 function startTelegram() {
-  if (String(process.env.DISABLE_TELEGRAM || '').toLowerCase() === 'true') {
+  if (envFlag('DISABLE_TELEGRAM')) {
     console.log('⚪ Telegram disabled by DISABLE_TELEGRAM=true.');
     return false;
   }
@@ -182,11 +209,11 @@ function sleep(ms) {
 async function main() {
   console.log('🚀 OpenClaw Agent starting on Railway...');
 
-  const whatsappStarted = await startWhatsApp();
   const telegramStarted = startTelegram();
+  const whatsappStarted = await startWhatsApp();
 
   if (!whatsappStarted && !telegramStarted) {
-    console.error('❌ No platform configured. Set TELEGRAM_TOKEN and/or WA_PHONE_NUMBER.');
+    console.error('❌ No platform configured. Set TELEGRAM_TOKEN and/or ENABLE_WHATSAPP=true with WA_PHONE_NUMBER.');
     process.exit(1);
   }
 
