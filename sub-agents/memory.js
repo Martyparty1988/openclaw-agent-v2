@@ -7,7 +7,7 @@ const path = require('path');
 
 const MEMORY_DIR = path.resolve(process.env.MEMORY_DIR || './agent-memory');
 const MAX_MESSAGES = Number(process.env.MEMORY_MAX_MESSAGES || 50);
-const MAX_KNOWLEDGE_ITEMS = Number(process.env.MEMORY_MAX_KNOWLEDGE_ITEMS || 200);
+const MAX_KNOWLEDGE_ITEMS = Number(process.env.MEMORY_MAX_KNOWLEDGE_ITEMS || 500);
 
 class Memory {
   async _ensureDir() {
@@ -82,9 +82,10 @@ class Memory {
     const data = await this._load(userId);
     const item = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-      content: clean.slice(0, 6000),
+      content: clean.slice(0, Number(process.env.KNOWLEDGE_ITEM_MAX_CHARS || 12000)),
       source: meta.source || 'manual',
       title: meta.title || '',
+      url: meta.url || '',
       createdAt: new Date().toISOString(),
     };
 
@@ -98,9 +99,9 @@ class Memory {
     return data.knowledge.slice(-limit).reverse();
   }
 
-  async getKnowledgeContext(userId, maxChars = 8000) {
+  async getKnowledgeContext(userId, maxChars = 10000) {
     const data = await this._load(userId);
-    const items = data.knowledge.slice(-50).reverse();
+    const items = data.knowledge.slice(-80).reverse();
     let out = '';
 
     for (const item of items) {
@@ -117,6 +118,49 @@ class Memory {
     const data = await this._load(userId);
     data.knowledge = [];
     await this._save(userId, data);
+  }
+
+  async exportData(userId) {
+    const data = await this._load(userId);
+    return this._normalize(data, userId);
+  }
+
+  async exportJson(userId) {
+    const data = await this.exportData(userId);
+    return JSON.stringify({
+      type: 'openclaw-memory-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data,
+    }, null, 2);
+  }
+
+  async importJson(userId, jsonText, { merge = true } = {}) {
+    let parsed;
+    try {
+      parsed = JSON.parse(String(jsonText || '').trim());
+    } catch {
+      throw new Error('Invalid JSON backup.');
+    }
+
+    const incoming = parsed.data ? parsed.data : parsed;
+    const normalizedIncoming = this._normalize(incoming, userId);
+
+    if (!merge) {
+      await this._save(userId, normalizedIncoming);
+      return normalizedIncoming;
+    }
+
+    const current = await this._load(userId);
+    const merged = this._normalize({
+      userId,
+      messages: [...current.messages, ...normalizedIncoming.messages],
+      knowledge: [...current.knowledge, ...normalizedIncoming.knowledge],
+      createdAt: current.createdAt || normalizedIncoming.createdAt,
+    }, userId);
+
+    await this._save(userId, merged);
+    return merged;
   }
 
   async stats(userId) {
