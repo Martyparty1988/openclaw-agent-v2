@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="g" cx="30%" cy="20%" r="90%">
+      <stop offset="0%" stop-color="#7dff9f"/>
+      <stop offset="46%" stop-color="#16db5f"/>
+      <stop offset="100%" stop-color="#071007"/>
+    </radialGradient>
+    <filter id="s" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="24" stdDeviation="32" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#g)"/>
+  <g filter="url(#s)">
+    <rect x="222" y="260" width="580" height="430" rx="150" fill="#071007" opacity="0.9"/>
+    <circle cx="395" cy="455" r="54" fill="#3dff7a"/>
+    <circle cx="629" cy="455" r="54" fill="#3dff7a"/>
+    <path d="M390 598c70 44 174 44 244 0" fill="none" stroke="#3dff7a" stroke-width="44" stroke-linecap="round"/>
+    <path d="M512 178v92" stroke="#071007" stroke-width="58" stroke-linecap="round" opacity="0.9"/>
+    <circle cx="512" cy="158" r="42" fill="#071007" opacity="0.9"/>
+  </g>
+</svg>
