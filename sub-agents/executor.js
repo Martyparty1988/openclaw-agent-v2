@@ -1,22 +1,21 @@
 // sub-agents/executor.js
 // Runs the agentic loop with tools: bash, file I/O, HTTP.
-// Safety-first defaults: bash is disabled unless ALLOW_AGENT_BASH=true.
+// Safety-first defaults: bash/write are disabled unless ALLOW_AGENT_* flags are true.
 
-const Anthropic = require('@anthropic-ai/sdk');
 const { exec } = require('child_process');
 const fs = require('fs').promises;
 const https = require('https');
 const http = require('http');
 const path = require('path');
 const util = require('util');
+const {
+  getProvider,
+  getModelForProvider,
+  getChatCompletionsConfig,
+  getAnthropicClient,
+} = require('./model-presets');
 
 const execAsync = util.promisify(exec);
-const client = process.env.ANTHROPIC_API_KEY ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }) : null;
-const PROVIDER = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
-const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'openrouter/free';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
 const WORKDIR = path.resolve(process.env.AGENT_WORKDIR || process.cwd());
 
 function envFlag(name) {
@@ -25,17 +24,13 @@ function envFlag(name) {
 
 function safePath(inputPath) {
   const resolved = path.resolve(WORKDIR, inputPath || '.');
-  if (!resolved.startsWith(WORKDIR)) {
-    throw new Error('Path outside AGENT_WORKDIR is not allowed.');
-  }
+  if (!resolved.startsWith(WORKDIR)) throw new Error('Path outside AGENT_WORKDIR is not allowed.');
   return resolved;
 }
 
 function validateUrl(url) {
   const parsed = new URL(url);
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error('Only http/https URLs are allowed.');
-  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Only http/https URLs are allowed.');
 
   const allowedHosts = (process.env.ALLOWED_FETCH_HOSTS || '')
     .split(',')
@@ -56,15 +51,15 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        command: { type: 'string', description: 'Shell command to run' },
-        timeout_ms: { type: 'number', description: 'Timeout in ms (default 15000)' },
+        command: { type: 'string' },
+        timeout_ms: { type: 'number' },
       },
       required: ['command'],
     },
   },
   {
     name: 'read_file',
-    description: 'Read a file from AGENT_WORKDIR. Returns its content.',
+    description: 'Read a file from AGENT_WORKDIR.',
     input_schema: {
       type: 'object',
       properties: { path: { type: 'string' } },
@@ -76,10 +71,7 @@ const TOOLS = [
     description: 'Write content under AGENT_WORKDIR. Disabled unless ALLOW_AGENT_WRITE=true.',
     input_schema: {
       type: 'object',
-      properties: {
-        path: { type: 'string' },
-        content: { type: 'string' },
-      },
+      properties: { path: { type: 'string' }, content: { type: 'string' } },
       required: ['path', 'content'],
     },
   },
@@ -88,7 +80,7 @@ const TOOLS = [
     description: 'List files under AGENT_WORKDIR.',
     input_schema: {
       type: 'object',
-      properties: { path: { type: 'string', description: 'Directory path (default: .)' } },
+      properties: { path: { type: 'string' } },
       required: [],
     },
   },
@@ -107,9 +99,7 @@ async function runTool(name, input = {}) {
   try {
     switch (name) {
       case 'bash': {
-        if (!envFlag('ALLOW_AGENT_BASH')) {
-          return { error: 'bash tool is disabled. Set ALLOW_AGENT_BASH=true only for trusted private deployments.' };
-        }
+        if (!envFlag('ALLOW_AGENT_BASH')) return { error: 'bash tool is disabled.' };
         const command = String(input.command || '').trim();
         if (!command) return { error: 'Empty command.' };
         const { stdout, stderr } = await execAsync(command, {
@@ -120,15 +110,11 @@ async function runTool(name, input = {}) {
         return { stdout: stdout.trim().slice(0, 4000), stderr: stderr.trim().slice(0, 4000) };
       }
 
-      case 'read_file': {
-        const filePath = safePath(input.path);
-        return { content: await fs.readFile(filePath, 'utf-8') };
-      }
+      case 'read_file':
+        return { content: await fs.readFile(safePath(input.path), 'utf-8') };
 
       case 'write_file': {
-        if (!envFlag('ALLOW_AGENT_WRITE')) {
-          return { error: 'write_file tool is disabled. Set ALLOW_AGENT_WRITE=true only for trusted private deployments.' };
-        }
+        if (!envFlag('ALLOW_AGENT_WRITE')) return { error: 'write_file tool is disabled.' };
         const filePath = safePath(input.path);
         await fs.mkdir(path.dirname(filePath), { recursive: true });
         await fs.writeFile(filePath, input.content, 'utf-8');
@@ -168,27 +154,21 @@ async function runTool(name, input = {}) {
 }
 
 const AGENT_SYSTEMS = {
-  code: `You are CodeAgent, an expert software engineer. Write clean, tested, production-ready code.
-Read files before modifying. Run tests after changes. Explain every significant change.`,
-  data: `You are DataAgent, an expert data analyst. Analyze files, compute statistics, identify patterns.
-Present findings clearly with key numbers. Use tools carefully when needed.`,
-  deploy: `You are DeployAgent, a DevOps expert. Handle git, deployments, servers, backups.
-Check current state before changes. Be conservative and avoid destructive operations.`,
-  general: `You are a capable AI assistant with access to guarded tools.
-If a tool is disabled, explain which environment flag is needed and why it should only be enabled for trusted private deployments.
-If information is missing, ask a brief clarifying question or explain what is needed.
-Summarize what you did at the end.`,
+  code: `You are CodeAgent. Odpovídej česky. Write clean, tested, production-ready code.`,
+  data: `You are DataAgent. Odpovídej česky. Analyze data clearly with key numbers.`,
+  deploy: `You are DeployAgent. Odpovídej česky. Be conservative and avoid destructive operations.`,
+  general: `Odpovídej vždy česky, pokud uživatel výslovně nechce jiný jazyk. Jsi praktický AI asistent.`,
 };
 
 class Executor {
   async run(userId, planOrTask, onProgress, maxIter = 12) {
-    if (PROVIDER === 'openrouter') return this.runOpenRouter(planOrTask);
-    if (PROVIDER === 'deepseek') return this.runDeepSeek(planOrTask);
-    if (PROVIDER === 'openai') return this.runOpenAI(planOrTask);
-
-    if (!client) {
-      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter/deepseek/openai for text-only mode.');
+    const provider = getProvider();
+    if (provider === 'openrouter' || provider === 'deepseek' || provider === 'openai') {
+      return this.runTextOnlyProvider(provider, planOrTask, getChatCompletionsConfig(provider));
     }
+
+    const client = getAnthropicClient();
+    if (!client) throw new Error('ANTHROPIC_API_KEY is missing.');
 
     const task = typeof planOrTask === 'string'
       ? planOrTask
@@ -199,7 +179,7 @@ class Executor {
     const messages = [{ role: 'user', content: task }];
 
     for (let i = 0; i < maxIter; i++) {
-      const res = await client.messages.create({ model: MODEL, max_tokens: 4096, system, tools: TOOLS, messages });
+      const res = await client.messages.create({ model: getModelForProvider('anthropic'), max_tokens: 4096, system, tools: TOOLS, messages });
       messages.push({ role: 'assistant', content: res.content });
 
       if (res.stop_reason === 'end_turn') {
@@ -216,7 +196,6 @@ class Executor {
         const result = await runTool(call.name, call.input);
         results.push({ type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(result) });
       }
-
       messages.push({ role: 'user', content: results });
     }
 
@@ -224,83 +203,33 @@ class Executor {
   }
 
   async chat(userId, message, history = []) {
+    const provider = getProvider();
     const messages = [...history, { role: 'user', content: message }];
 
-    if (PROVIDER === 'openrouter') {
-      return this.chatCompletions({
-        url: 'https://openrouter.ai/api/v1/chat/completions',
-        token: process.env.OPENROUTER_API_KEY,
-        tokenLabel: 'OPENROUTER_API_KEY',
-        model: OPENROUTER_MODEL,
-        providerName: 'openrouter',
-      }, messages);
+    if (provider === 'openrouter' || provider === 'deepseek' || provider === 'openai') {
+      return this.chatCompletions(getChatCompletionsConfig(provider), messages);
     }
 
-    if (PROVIDER === 'deepseek') {
-      return this.chatCompletions({
-        url: 'https://api.deepseek.com/chat/completions',
-        token: process.env.DEEPSEEK_API_KEY,
-        tokenLabel: 'DEEPSEEK_API_KEY',
-        model: DEEPSEEK_MODEL,
-        providerName: 'deepseek',
-      }, messages);
-    }
+    const client = getAnthropicClient();
+    if (!client) throw new Error('ANTHROPIC_API_KEY is missing.');
 
-    if (PROVIDER === 'openai') {
-      return this.chatCompletions({
-        url: 'https://api.openai.com/v1/chat/completions',
-        token: process.env.OPENAI_API_KEY,
-        tokenLabel: 'OPENAI_API_KEY',
-        model: OPENAI_MODEL,
-        providerName: 'openai',
-      }, messages);
-    }
-
-    if (!client) {
-      throw new Error('ANTHROPIC_API_KEY is missing. Set LLM_PROVIDER=openrouter/deepseek/openai for text-only mode.');
-    }
-
-    const res = await client.messages.create({ model: MODEL, max_tokens: 1024, system: AGENT_SYSTEMS.general, messages });
+    const res = await client.messages.create({
+      model: getModelForProvider('anthropic'),
+      max_tokens: 1024,
+      system: AGENT_SYSTEMS.general,
+      messages,
+    });
     return res.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
   }
 
-  async runOpenRouter(planOrTask) {
-    return this.runTextOnlyProvider('openrouter', planOrTask, {
-      url: 'https://openrouter.ai/api/v1/chat/completions',
-      token: process.env.OPENROUTER_API_KEY,
-      tokenLabel: 'OPENROUTER_API_KEY',
-      model: OPENROUTER_MODEL,
-      providerName: 'openrouter',
-    });
-  }
-
-  async runDeepSeek(planOrTask) {
-    return this.runTextOnlyProvider('deepseek', planOrTask, {
-      url: 'https://api.deepseek.com/chat/completions',
-      token: process.env.DEEPSEEK_API_KEY,
-      tokenLabel: 'DEEPSEEK_API_KEY',
-      model: DEEPSEEK_MODEL,
-      providerName: 'deepseek',
-    });
-  }
-
-  async runOpenAI(planOrTask) {
-    return this.runTextOnlyProvider('openai', planOrTask, {
-      url: 'https://api.openai.com/v1/chat/completions',
-      token: process.env.OPENAI_API_KEY,
-      tokenLabel: 'OPENAI_API_KEY',
-      model: OPENAI_MODEL,
-      providerName: 'openai',
-    });
-  }
-
   async runTextOnlyProvider(providerName, planOrTask, config) {
+    if (!config) throw new Error(`Unsupported provider: ${providerName}`);
     const task = typeof planOrTask === 'string'
       ? planOrTask
       : `Goal: ${planOrTask.goal}\n\nSteps:\n${planOrTask.steps.map((s) => `${s.id}. ${s.action}: ${s.details}`).join('\n')}`;
 
     const output = await this.chatCompletions(config, [
-      { role: 'system', content: `You are running in ${providerName} text-only mode. You cannot execute bash or modify files directly. Provide a precise plan or patch text instead.` },
+      { role: 'system', content: `Odpovídej česky. Běžíš v ${providerName} text-only režimu. Nemůžeš přímo spouštět bash ani měnit soubory. Dej přesný plán nebo patch text.` },
       { role: 'user', content: task },
     ]);
 
@@ -326,9 +255,7 @@ class Executor {
       body: JSON.stringify({ model: config.model, messages }),
     });
 
-    if (!response.ok) {
-      throw new Error(`${PROVIDER} executor failed: ${response.status} ${await response.text()}`);
-    }
+    if (!response.ok) throw new Error(`${config.providerName} executor failed: ${response.status} ${await response.text()}`);
 
     const data = await response.json();
     return data?.choices?.[0]?.message?.content || 'Žádná odpověď od modelu.';
