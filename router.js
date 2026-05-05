@@ -252,7 +252,8 @@ function readJsonBody(req, maxBytes = 20000) {
       if (!body.trim()) return resolve({});
       try {
         resolve(JSON.parse(body));
-      } catch {
+      } catch(e) {
+        if (!req.destroyed) req.destroy();
         reject(new Error('Invalid JSON body.'));
       }
     });
