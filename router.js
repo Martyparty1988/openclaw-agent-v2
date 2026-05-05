@@ -10,7 +10,11 @@ require('dotenv').config();
 
 const meta = new MetaAgent();
 const autoWorker = new AutoWorker(meta);
-meta.setAutoWorker?.(autoWorker);
+if (typeof meta.setAutoWorker === 'function') {
+  meta.setAutoWorker(autoWorker);
+} else {
+  console.warn('setAutoWorker not available');
+}
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 
@@ -544,7 +548,4 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('❌ Fatal startup error:', err);
-  process.exit(1);
-});
+main
