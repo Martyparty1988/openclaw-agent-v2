@@ -1,5 +1,5 @@
-// router-pair-only.js — minimal Railway server for WhatsApp pairing.
-// Focus: reliable pairing. No AI agent, no Telegram, no heavy optional imports.
+// router-pair-only.js — minimal Railway server for WhatsApp pairing + Telegram control.
+// Focus: reliable pairing. No AI agent imports.
 
 const http = require('http');
 const fs = require('fs');
@@ -15,11 +15,14 @@ let lastError = '';
 let mode = 'booting';
 let starting = false;
 let baileysReady = false;
+let telegramStarted = false;
+let telegramError = '';
 
 const envFlag = (name) => String(process.env[name] || '').toLowerCase() === 'true';
 const digits = (value) => String(value || '').replace(/\D/g, '');
 const phoneNumber = () => digits(process.env.WA_PHONE_NUMBER || process.env.WHATSAPP_PHONE_NUMBER || process.env.PHONE_NUMBER || '');
 const authDir = () => process.env.WA_AUTH_DIR || './wa_auth';
+const allowedTelegramIds = () => String(process.env.ALLOWED_TELEGRAM_CHAT_IDS || process.env.ALLOWED_USER_IDS || '').split(',').map(x => x.trim()).filter(Boolean);
 
 function json(res, status, payload) {
   res.writeHead(status, {
@@ -48,6 +51,9 @@ function statusPayload() {
     time: new Date().toISOString(),
     provider: 'pair-only',
     model: 'none',
+    telegram: Boolean(process.env.TELEGRAM_TOKEN && !envFlag('DISABLE_TELEGRAM')),
+    telegramStarted,
+    telegramError,
     whatsapp: Boolean(phoneNumber() && envFlag('ENABLE_WHATSAPP')),
     whatsappPhoneConfigured: Boolean(phoneNumber()),
     whatsappPhoneLast4: phoneNumber() ? phoneNumber().slice(-4) : '',
@@ -73,7 +79,7 @@ async function loadBaileys() {
       DisconnectReason: mod.DisconnectReason,
       fetchLatestBaileysVersion: mod.fetchLatestBaileysVersion
     };
-  } catch (firstErr) {
+  } catch {
     const mod = await import('@whiskeysockets/baileys');
     return {
       makeWASocket: mod.default || mod.makeWASocket,
@@ -101,7 +107,7 @@ async function requestPairingCode() {
 
   if (!sock || typeof sock.requestPairingCode !== 'function') {
     if (!starting) startWhatsApp().catch(() => {});
-    throw new Error('WhatsApp socket is not ready yet. Wait 10 seconds after deploy, then call /api/whatsapp/pair again. Current mode: ' + mode);
+    throw new Error('WhatsApp socket is not ready yet. Wait 10 seconds after deploy, then try /wa pair again. Current mode: ' + mode);
   }
 
   const raw = await sock.requestPairingCode(phone);
@@ -117,9 +123,7 @@ async function requestPairingCode() {
 
 async function resetSession() {
   const dir = path.resolve(authDir());
-  try {
-    if (sock?.end) sock.end();
-  } catch {}
+  try { if (sock?.end) sock.end(); } catch {}
   sock = null;
   connected = false;
   pairingCode = '';
@@ -127,12 +131,7 @@ async function resetSession() {
   pairingAt = '';
   baileysReady = false;
   mode = 'resetting';
-  try {
-    fs.rmSync(dir, { recursive: true, force: true });
-  } catch (err) {
-    lastError = 'Reset failed: ' + (err.message || String(err));
-    throw err;
-  }
+  fs.rmSync(dir, { recursive: true, force: true });
   lastError = '';
   await startWhatsApp();
   return { reset: true, authDir: dir, status: statusPayload() };
@@ -180,9 +179,7 @@ async function startWhatsApp() {
 
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', (update) => {
-      if (update.connection === 'connecting') {
-        mode = 'connecting';
-      }
+      if (update.connection === 'connecting') mode = 'connecting';
       if (update.connection === 'open') {
         connected = true;
         mode = 'connected';
@@ -211,9 +208,8 @@ async function startWhatsApp() {
     baileysReady = true;
     mode = 'socket-ready';
     console.log('📱 WhatsApp socket ready for ' + phone);
-    console.log('Generate fresh code manually: GET or POST /api/whatsapp/pair');
+    console.log('Generate fresh code manually: /wa pair in Telegram or GET /api/whatsapp/pair');
 
-    // Optional auto-pair only when explicitly enabled. Manual pair is safer because codes expire.
     if (envFlag('WA_AUTO_PAIR')) {
       setTimeout(() => requestPairingCode().catch((err) => {
         lastError = err.message || String(err);
@@ -226,6 +222,75 @@ async function startWhatsApp() {
     console.error('WhatsApp startup failed:', lastError);
   } finally {
     starting = false;
+  }
+}
+
+function formatStatus() {
+  const s = statusPayload();
+  return [
+    '✅ Martybot pair-only běží',
+    'Telegram: ' + (s.telegramStarted ? 'ON' : 'OFF'),
+    'WhatsApp: ' + s.whatsappMode,
+    'Socket ready: ' + s.whatsappSocketReady,
+    'Connected: ' + s.whatsappConnected,
+    'Pairing ready: ' + s.whatsappPairingReady,
+    s.whatsappLastError ? 'Last error: ' + s.whatsappLastError : ''
+  ].filter(Boolean).join('\n');
+}
+
+async function startTelegram() {
+  if (envFlag('DISABLE_TELEGRAM') || !process.env.TELEGRAM_TOKEN) {
+    telegramStarted = false;
+    telegramError = envFlag('DISABLE_TELEGRAM') ? 'disabled' : 'missing token';
+    console.log('Telegram disabled or TELEGRAM_TOKEN missing.');
+    return;
+  }
+
+  try {
+    const TelegramBot = require('node-telegram-bot-api');
+    const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
+    telegramStarted = true;
+    telegramError = '';
+
+    bot.on('message', async (msg) => {
+      const chatId = String(msg.chat.id);
+      const text = String(msg.text || '').trim().toLowerCase();
+      const allow = allowedTelegramIds();
+      if (allow.length && !allow.includes(chatId) && !allow.includes('tg_' + chatId)) {
+        await bot.sendMessage(chatId, '🚫 Tenhle Telegram chat není v ALLOWED_TELEGRAM_CHAT_IDS. Tvoje ID: ' + chatId);
+        return;
+      }
+
+      try {
+        if (text === '/start' || text === '/help') {
+          await bot.sendMessage(chatId, 'Martybot pair-only ✅\n\nPříkazy:\n/status\n/wa pair\n/wa reset\n/wa status');
+        } else if (text === '/status' || text === '/wa status') {
+          await bot.sendMessage(chatId, formatStatus());
+        } else if (text === '/wa pair' || text === '/whatsapp pair') {
+          const pair = await requestPairingCode();
+          if (pair.alreadyRegistered) await bot.sendMessage(chatId, 'WhatsApp už je spárovaný ✅');
+          else await bot.sendMessage(chatId, 'Čerstvý WhatsApp kód:\n\n' + pair.code + '\n\nZadej ho hned ve WhatsApp → Propojená zařízení → Propojit pomocí telefonního čísla.');
+        } else if (text === '/wa reset' || text === '/whatsapp reset') {
+          await resetSession();
+          await bot.sendMessage(chatId, 'WhatsApp session reset ✅\nPočkej cca 10 sekund a napiš /wa pair.');
+        } else {
+          await bot.sendMessage(chatId, 'Pair-only režim ✅\nPoužij /status, /wa pair nebo /wa reset.');
+        }
+      } catch (err) {
+        await bot.sendMessage(chatId, 'Chyba: ' + (err.message || String(err)));
+      }
+    });
+
+    bot.on('polling_error', (err) => {
+      telegramError = err.message || String(err);
+      console.error('Telegram polling error:', telegramError);
+    });
+
+    console.log('✅ Telegram pair-only started.');
+  } catch (err) {
+    telegramStarted = false;
+    telegramError = err.message || String(err);
+    console.error('Telegram startup failed:', telegramError);
   }
 }
 
@@ -261,7 +326,7 @@ function startHttp() {
 
       if (url.pathname === '/api/chat' && req.method === 'POST') {
         if (!authOk(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
-        return json(res, 200, { ok: true, replies: ['Martybot pair-only běží ✅\nPro nový kód otevři /api/whatsapp/pair. Když kód selže, otevři /api/whatsapp/reset a pak znovu /api/whatsapp/pair.'] });
+        return json(res, 200, { ok: true, replies: [formatStatus()] });
       }
 
       return json(res, 404, { ok: false, error: 'Not found', path: url.pathname });
@@ -274,4 +339,5 @@ function startHttp() {
 
 console.log('🚀 router-pair-only starting');
 startHttp();
+startTelegram();
 startWhatsApp();
