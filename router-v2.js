@@ -142,9 +142,9 @@ function readJsonBody(req, maxBytes = 30000) {
 }
 
 function currentModel() {
-  const provider = (process.env.LLM_PROVIDER || 'openrouter').toLowerCase();
+  const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
   const modelByProvider = {
-    anthropic: process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022',
+    anthropic: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
     openrouter: process.env.OPENROUTER_MODEL || 'openrouter/free',
     deepseek: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
     openai: process.env.OPENAI_MODEL || 'gpt-4o-mini',
@@ -162,6 +162,7 @@ function publicStatus() {
     time: new Date().toISOString(),
     provider: model.provider,
     model: model.model,
+    defaultProvider: 'anthropic',
     telegram: Boolean(process.env.TELEGRAM_TOKEN),
     whatsapp: Boolean(process.env.WA_PHONE_NUMBER),
     email: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
