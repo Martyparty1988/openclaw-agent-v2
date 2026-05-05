@@ -226,7 +226,10 @@ function sendJson(res, status, payload) {
 
 function isApiAuthorized(req) {
   const token = process.env.WEB_API_TOKEN;
-  if (!token) return true;
+  if (!token) {
+    // Return false when no token is configured unless explicitly allowed
+    return envFlag('ALLOW_UNAUTHENTICATED_API_ACCESS');
+  }
   const header = req.headers.authorization || '';
   const bearer = header.startsWith('Bearer ') ? header.slice(7) : '';
   const alt = req.headers['x-agent-token'] || '';
