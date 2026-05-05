@@ -12,6 +12,68 @@ const meta = new MetaAgent();
 const autoWorker = new AutoWorker(meta);
 meta.setAutoWorker?.(autoWorker);
 
+// ─── Rate Limiting ────────────────────────────────────────────────────────────
+
+class RateLimiter {
+  constructor(windowMs = 60000, maxRequests = 60) {
+    this.windowMs = windowMs;
+    this.maxRequests = maxRequests;
+    this.requests = new Map(); // key -> { count, resetTime }
+  }
+
+  isAllowed(key) {
+    const now = Date.now();
+    const record = this.requests.get(key);
+
+    if (!record || now > record.resetTime) {
+      this.requests.set(key, {
+        count: 1,
+        resetTime: now + this.windowMs
+      });
+      return true;
+    }
+
+    if (record.count >= this.maxRequests) {
+      return false;
+    }
+
+    record.count++;
+    return true;
+  }
+
+  getRemainingTime(key) {
+    const record = this.requests.get(key);
+    if (!record) return 0;
+    return Math.max(0, record.resetTime - Date.now());
+  }
+
+  cleanup() {
+    const now = Date.now();
+    for (const [key, record] of this.requests.entries()) {
+      if (now > record.resetTime) {
+        this.requests.delete(key);
+      }
+    }
+  }
+}
+
+// Create rate limiters with different limits
+const httpRateLimiter = new RateLimiter(
+  Number(process.env.RATE_LIMIT_WINDOW_MS || 60000), // 1 minute
+  Number(process.env.RATE_LIMIT_MAX_REQUESTS || 30)  // 30 requests per minute
+);
+
+const chatRateLimiter = new RateLimiter(
+  Number(process.env.CHAT_RATE_LIMIT_WINDOW_MS || 60000), // 1 minute
+  Number(process.env.CHAT_RATE_LIMIT_MAX_REQUESTS || 10)  // 10 chat requests per minute
+);
+
+// Cleanup old entries every 5 minutes
+setInterval(() => {
+  httpRateLimiter.cleanup();
+  chatRateLimiter.cleanup();
+}, 5 * 60 * 1000);
+
 // ─── Access Control ───────────────────────────────────────────────────────────
 
 function splitEnv(name) {
@@ -73,8 +135,15 @@ async function guardMessage({ platform, userId, rawId, reply }) {
   if (isAuthorized({ platform, userId, rawId })) return true;
 
   console.warn(`🚫 Blocked unauthorized ${platform} user: ${rawId || userId}`);
-  await reply('🚫 Tento bot je soukromý. Přidej svoje ID/číslo do allowlistu v Railway Variables.');
+  await reply('🚫 Tento bot je soukromý. Přidaj svoje ID/číslo do allowlistu v Railway Variables.');
   return false;
+}
+
+function getRateLimitKey(req) {
+  // Use IP address as primary identifier for rate limiting
+  const forwarded = req.headers['x-forwarded-for'];
+  const ip = forwarded ? forwarded.split(',')[0].trim() : req.connection.remoteAddress;
+  return ip || 'unknown';
 }
 
 // ─── HTTP API for Vercel Web ──────────────────────────────────────────────────
@@ -179,6 +248,12 @@ function publicStatus() {
     writeTools: envFlag('ALLOW_AGENT_WRITE'),
     webApiToken: Boolean(process.env.WEB_API_TOKEN),
     allowedOrigins: getAllowedOrigins().length ? getAllowedOrigins() : ['any'],
+    rateLimiting: {
+      httpWindow: httpRateLimiter.windowMs,
+      httpMaxRequests: httpRateLimiter.maxRequests,
+      chatWindow: chatRateLimiter.windowMs,
+      chatMaxRequests: chatRateLimiter.maxRequests,
+    },
   };
 }
 
@@ -191,6 +266,21 @@ function startHttpApi() {
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       return res.end();
+    }
+
+    // Apply rate limiting to all HTTP requests
+    const rateLimitKey = getRateLimitKey(req);
+    if (!httpRateLimiter.isAllowed(rateLimitKey)) {
+      const retryAfter = Math.ceil(httpRateLimiter.getRemainingTime(rateLimitKey) / 1000);
+      res.setHeader('Retry-After', retryAfter.toString());
+      res.setHeader('X-RateLimit-Limit', httpRateLimiter.maxRequests.toString());
+      res.setHeader('X-RateLimit-Remaining', '0');
+      res.setHeader('X-RateLimit-Reset', new Date(Date.now() + httpRateLimiter.getRemainingTime(rateLimitKey)).toISOString());
+      return sendJson(res, 429, { 
+        ok: false, 
+        error: 'Too many requests', 
+        retryAfter: retryAfter 
+      });
     }
 
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -206,6 +296,21 @@ function startHttpApi() {
       }
 
       if (req.method === 'POST' && url.pathname === '/api/chat') {
+        // Apply stricter rate limiting for chat endpoint
+        const chatRateLimitKey = `chat_${rateLimitKey}`;
+        if (!chatRateLimiter.isAllowed(chatRateLimitKey)) {
+          const retryAfter = Math.ceil(chatRateLimiter.getRemainingTime(chatRateLimitKey) / 1000);
+          res.setHeader('Retry-After', retryAfter.toString());
+          res.setHeader('X-RateLimit-Limit', chatRateLimiter.maxRequests.toString());
+          res.setHeader('X-RateLimit-Remaining', '0');
+          res.setHeader('X-RateLimit-Reset', new Date(Date.now() + chatRateLimiter.getRemainingTime(chatRateLimitKey)).toISOString());
+          return sendJson(res, 429, { 
+            ok: false, 
+            error: 'Too many chat requests', 
+            retryAfter: retryAfter 
+          });
+        }
+
         const tokenProtected = Boolean(process.env.WEB_API_TOKEN);
         if (!isApiAuthorized(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
 
@@ -240,6 +345,8 @@ function startHttpApi() {
 
   server.listen(port, () => {
     console.log(`🌐 HTTP API listening on :${port}`);
+    console.log(`🛡️  Rate limiting: ${httpRateLimiter.maxRequests} requests per ${httpRateLimiter.windowMs}ms`);
+    console.log(`💬 Chat rate limiting: ${chatRateLimiter.maxRequests} requests per ${chatRateLimiter.windowMs}ms`);
   });
 
   return true;
