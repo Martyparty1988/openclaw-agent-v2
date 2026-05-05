@@ -1,1 +1,1 @@
-{"build":{"builder":"NIXPACKS"},"deploy":{"startCommand":"node router-full-web.js","restartPolicyType":"ON_FAILURE","restartPolicyMaxRetries":10}}
+{"build":{"builder":"NIXPACKS"},"deploy":{"startCommand":"node start-full-web.js","restartPolicyType":"ON_FAILURE","restartPolicyMaxRetries":10}}
