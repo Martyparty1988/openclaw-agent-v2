@@ -10,7 +10,9 @@ const root = path.resolve(here, '..');
 
 const items = [
   'router.js',
+  'router-v2.js',
   'meta-agent.js',
+  'meta-agent-v2.js',
   'sub-agents',
   'scripts',
   'web',
