@@ -243,7 +243,9 @@ function readJsonBody(req, maxBytes = 20000) {
       body += chunk;
       if (Buffer.byteLength(body) > maxBytes) {
         reject(new Error('Request body too large.'));
-        req.destroy();
+        if (!req.destroyed) {
+          req.destroy();
+        }
       }
     });
     req.on('end', () => {
