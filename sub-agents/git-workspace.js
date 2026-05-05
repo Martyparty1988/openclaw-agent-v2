@@ -27,6 +27,45 @@ async function exists(target) {
   }
 }
 
+function sanitize(text = '') {
+  return String(text)
+    .replace(/github_pat_[A-Za-z0-9_]+/g, 'github_pat_***')
+    .replace(/ghp_[A-Za-z0-9_]+/g, 'ghp_***')
+    .replace(/x-access-token:[^@\s]+@/g, 'x-access-token:***@')
+    .replace(/https:\/\/[^@\s]+@github\.com/g, 'https://***@github.com')
+    .trim();
+}
+
+function explainGitError(err) {
+  const raw = sanitize([err?.message, err?.stderr, err?.stdout].filter(Boolean).join('\n'));
+  const lower = raw.toLowerCase();
+
+  if (lower.includes('write access to repository not granted') || lower.includes('403') || lower.includes('invalid username or token') || lower.includes('authentication failed')) {
+    return [
+      'GitHub odmítl push. GIT_TOKEN je pravděpodobně jen read-only, expirovaný, neodsouhlasený, nebo nemá přístup k tomuto repozitáři.',
+      '',
+      'Oprava:',
+      '1. V GitHubu vytvoř nový Fine-grained Personal Access Token.',
+      '2. Repository access: Only selected repositories → openclaw-agent-v2.',
+      '3. Repository permissions: Contents = Read and write.',
+      '4. Token vlož pouze do Railway Variables jako GIT_TOKEN.',
+      '5. Dej Railway Redeploy a potom spusť /git push.',
+      '',
+      raw,
+    ].join('\n');
+  }
+
+  if (lower.includes('could not read username') || lower.includes('terminal prompts disabled')) {
+    return [
+      'Git se chtěl zeptat na přihlašovací údaje, ale Railway nemá interaktivní terminál.',
+      'Oprava: nastav GIT_TOKEN v Railway Variables.',
+      raw,
+    ].join('\n');
+  }
+
+  return raw || 'Neznámá Git chyba.';
+}
+
 async function makeAskPass() {
   const dir = '/tmp/martybot-git';
   const file = path.join(dir, 'askpass.sh');
@@ -52,17 +91,21 @@ async function git(args, cwd, timeout = 120000) {
 
   if (process.env.GIT_TOKEN) env.GIT_ASKPASS = await makeAskPass();
 
-  const result = await execFileAsync('git', args, {
-    cwd,
-    env,
-    timeout,
-    maxBuffer: 1024 * 1024,
-  });
+  try {
+    const result = await execFileAsync('git', args, {
+      cwd,
+      env,
+      timeout,
+      maxBuffer: 1024 * 1024,
+    });
 
-  return {
-    stdout: String(result.stdout || '').trim(),
-    stderr: String(result.stderr || '').trim(),
-  };
+    return {
+      stdout: sanitize(result.stdout || ''),
+      stderr: sanitize(result.stderr || ''),
+    };
+  } catch (err) {
+    throw new Error(explainGitError(err));
+  }
 }
 
 async function status() {
@@ -74,12 +117,17 @@ async function status() {
   let remote = '';
   let lastCommit = '';
   let dirty = '';
+  let aheadBehind = '';
 
   if (hasGit) {
     try { currentBranch = (await git(['branch', '--show-current'], cfg.workdir)).stdout; } catch {}
-    try { remote = (await git(['remote', 'get-url', 'origin'], cfg.workdir)).stdout.replace(/x-access-token:[^@]+@/g, 'x-access-token:***@'); } catch {}
+    try { remote = (await git(['remote', 'get-url', 'origin'], cfg.workdir)).stdout; } catch {}
     try { lastCommit = (await git(['log', '-1', '--oneline'], cfg.workdir)).stdout; } catch {}
     try { dirty = (await git(['status', '--porcelain'], cfg.workdir)).stdout ? 'ano' : 'ne'; } catch {}
+    try {
+      await git(['fetch', 'origin', cfg.branch], cfg.workdir);
+      aheadBehind = (await git(['rev-list', '--left-right', '--count', `origin/${cfg.branch}...HEAD`], cfg.workdir)).stdout.replace('\t', ' behind / ') + ' ahead';
+    } catch {}
   }
 
   return {
@@ -88,6 +136,7 @@ async function status() {
     remote,
     lastCommit,
     dirty,
+    aheadBehind,
     hasWorkdir,
     hasGit,
   };
@@ -106,6 +155,7 @@ function formatStatus(s) {
     s.remote ? `• Remote: ${s.remote}` : '',
     s.lastCommit ? `• Poslední commit: ${s.lastCommit}` : '',
     s.dirty ? `• Lokální změny: ${s.dirty}` : '',
+    s.aheadBehind ? `• Sync: ${s.aheadBehind}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -202,9 +252,42 @@ async function pull() {
   return `✅ Pull/sync hotový.\n${notes.join('\n')}\n\n${formatStatus(s)}`;
 }
 
+async function push() {
+  const cfg = getConfig();
+  if (!(await exists(path.join(cfg.workdir, '.git')))) throw new Error('Chybí .git. Nejdřív spusť /git setup.');
+  if (!cfg.hasToken) throw new Error('Chybí GIT_TOKEN v Railway Variables.');
+
+  await git(['remote', 'set-url', 'origin', `https://github.com/${cfg.repo}.git`], cfg.workdir);
+  await git(['fetch', 'origin', cfg.branch], cfg.workdir);
+
+  const aheadBehind = (await git(['rev-list', '--left-right', '--count', `origin/${cfg.branch}...HEAD`], cfg.workdir)).stdout;
+  const [behindRaw, aheadRaw] = aheadBehind.split(/\s+/);
+  const behind = Number(behindRaw || 0);
+  const ahead = Number(aheadRaw || 0);
+
+  if (behind > 0) {
+    return [
+      '⚠️ Push zastavený: GitHub má novější commity než lokální Railway workspace.',
+      `• Behind: ${behind}`,
+      `• Ahead: ${ahead}`,
+      'Nejdřív spusť /git pull, potom případně znovu /improve.',
+    ].join('\n');
+  }
+
+  if (ahead === 0) {
+    const s = await status();
+    return `ℹ️ Není co pushovat. Railway workspace není napřed před GitHubem.\n\n${formatStatus(s)}`;
+  }
+
+  await git(['push', 'origin', cfg.branch], cfg.workdir, 120000);
+  const s = await status();
+  return `✅ Git push hotový. Odesláno commitů: ${ahead}\n\n${formatStatus(s)}`;
+}
+
 module.exports = {
   status,
   ensure,
   pull,
+  push,
   formatStatus,
 };
