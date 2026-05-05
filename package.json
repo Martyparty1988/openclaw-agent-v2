@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "commonjs",
-  "description": "Martybot minimal Railway router for WhatsApp pairing.",
+  "description": "Martybot minimal Railway router for WhatsApp pairing and Telegram control.",
   "engines": {
     "node": "20.x"
   },
@@ -13,6 +13,7 @@
   "dependencies": {
     "baileys": "^6.7.19",
     "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^0.66.0",
     "pino": "^9.5.0"
   }
 }
