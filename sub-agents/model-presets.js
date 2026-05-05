@@ -1,9 +1,17 @@
 // sub-agents/model-presets.js
 // Runtime model/provider switching. Secrets stay in Railway Variables.
+// Default provider is Anthropic Claude. OpenRouter free remains available as fallback.
 
 const Anthropic = require('@anthropic-ai/sdk');
 
+const DEFAULT_PROVIDER = 'anthropic';
+const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+
 const PRESETS = {
+  'claude': { provider: 'anthropic', model: DEFAULT_CLAUDE_MODEL, envModelKey: 'CLAUDE_MODEL' },
+  'claude sonnet': { provider: 'anthropic', model: DEFAULT_CLAUDE_MODEL, envModelKey: 'CLAUDE_MODEL' },
+  'anthropic sonnet': { provider: 'anthropic', model: DEFAULT_CLAUDE_MODEL, envModelKey: 'CLAUDE_MODEL' },
+  'anthropic old-sonnet': { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', envModelKey: 'CLAUDE_MODEL' },
   'openrouter free': { provider: 'openrouter', model: 'openrouter/free', envModelKey: 'OPENROUTER_MODEL' },
   'openrouter qwen': { provider: 'openrouter', model: 'qwen/qwen-2.5-coder-32b-instruct:free', envModelKey: 'OPENROUTER_MODEL' },
   'openrouter llama': { provider: 'openrouter', model: 'meta-llama/llama-3.2-3b-instruct:free', envModelKey: 'OPENROUTER_MODEL' },
@@ -11,8 +19,6 @@ const PRESETS = {
   'openai mini': { provider: 'openai', model: 'gpt-4o-mini', envModelKey: 'OPENAI_MODEL' },
   'deepseek flash': { provider: 'deepseek', model: 'deepseek-v4-flash', envModelKey: 'DEEPSEEK_MODEL' },
   'deepseek pro': { provider: 'deepseek', model: 'deepseek-v4-pro', envModelKey: 'DEEPSEEK_MODEL' },
-  'anthropic sonnet': { provider: 'anthropic', model: 'claude-sonnet-4-20250514', envModelKey: 'CLAUDE_MODEL' },
-  'anthropic old-sonnet': { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', envModelKey: 'CLAUDE_MODEL' },
 };
 
 function normalize(value) {
@@ -20,22 +26,22 @@ function normalize(value) {
 }
 
 function getProvider() {
-  return normalize(process.env.LLM_PROVIDER || 'openrouter');
+  return normalize(process.env.LLM_PROVIDER || DEFAULT_PROVIDER);
 }
 
 function getModelForProvider(provider = getProvider()) {
+  if (provider === 'anthropic') return process.env.CLAUDE_MODEL || DEFAULT_CLAUDE_MODEL;
   if (provider === 'openrouter') return process.env.OPENROUTER_MODEL || 'openrouter/free';
   if (provider === 'deepseek') return process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
   if (provider === 'openai') return process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  if (provider === 'anthropic') return process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
   return 'neznámý';
 }
 
 function getTokenInfo(provider = getProvider()) {
+  if (provider === 'anthropic') return { value: process.env.ANTHROPIC_API_KEY, label: 'ANTHROPIC_API_KEY' };
   if (provider === 'openrouter') return { value: process.env.OPENROUTER_API_KEY, label: 'OPENROUTER_API_KEY' };
   if (provider === 'deepseek') return { value: process.env.DEEPSEEK_API_KEY, label: 'DEEPSEEK_API_KEY' };
   if (provider === 'openai') return { value: process.env.OPENAI_API_KEY, label: 'OPENAI_API_KEY' };
-  if (provider === 'anthropic') return { value: process.env.ANTHROPIC_API_KEY, label: 'ANTHROPIC_API_KEY' };
   return { value: '', label: 'UNKNOWN_API_KEY' };
 }
 
@@ -95,16 +101,21 @@ function listPresetsText() {
   return [
     '🧠 Přepínání modelů',
     '',
+    'Výchozí režim:',
+    '/model claude',
+    '',
     'Použití:',
+    '/model claude',
+    '/model claude sonnet',
+    '/model anthropic old-sonnet',
     '/model openrouter free',
     '/model openrouter qwen',
     '/model openrouter llama',
     '/model openrouter deepseek',
     '/model deepseek flash',
     '/model openai mini',
-    '/model anthropic sonnet',
     '',
-    'Doporučení pro free provoz:',
+    'Fallback když Claude nemá kredit:',
     '/model openrouter free',
     '',
     'Poznámka: klíče se nepřeposílají v chatu. Musí být jen v Railway Variables.',
@@ -125,6 +136,8 @@ function statusSummary() {
 
 module.exports = {
   PRESETS,
+  DEFAULT_PROVIDER,
+  DEFAULT_CLAUDE_MODEL,
   applyPreset,
   getProvider,
   getModelForProvider,
