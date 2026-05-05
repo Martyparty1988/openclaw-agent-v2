@@ -1,16 +1,16 @@
 {
   "name": "openclaw-agent",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Self-improving autonomous AI agent — WhatsApp + Telegram + Web + Email + Supabase Memory",
-  "main": "router.js",
+  "main": "router-v2.js",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node scripts/ensure-git-workdir.js && node router.js",
-    "dev": "node --watch router.js",
+    "start": "node scripts/ensure-git-workdir.js && node router-v2.js",
+    "dev": "node --watch router-v2.js",
     "web": "npx serve web -p 3000",
-    "check": "node --check router.js && node --check meta-agent.js && node --check sub-agents/email.js && node --check sub-agents/learner.js && node --check sub-agents/memory.js && node --check sub-agents/model-presets.js && node --check sub-agents/git-workspace.js && node --check sub-agents/auto-worker.js && node --check scripts/ensure-git-workdir.js",
+    "check": "node --check router-v2.js && node --check meta-agent-v2.js && node --check sub-agents/email.js && node --check sub-agents/learner.js && node --check sub-agents/memory.js && node --check sub-agents/model-presets.js && node --check sub-agents/git-workspace.js && node --check sub-agents/auto-worker.js && node --check scripts/ensure-git-workdir.js",
     "deploy:check": "node scripts/deploy-preflight.js"
   },
   "dependencies": {
