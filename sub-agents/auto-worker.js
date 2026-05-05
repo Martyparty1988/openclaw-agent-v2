@@ -1,7 +1,7 @@
 // sub-agents/auto-worker.js
 // Lightweight autonomous worker for Martybot.
 // It runs safe periodic checks inside the Railway process.
-// It does NOT edit files, push git, or spend paid APIs unless explicit env flags allow it.
+// It can proactively notify the user, but edits/pushes code only when explicit safety flags allow it.
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -21,11 +21,19 @@ function rel(workdir, file) {
   return path.join(workdir, file);
 }
 
+function minutesSince(iso) {
+  if (!iso) return Infinity;
+  const time = new Date(iso).getTime();
+  if (!Number.isFinite(time)) return Infinity;
+  return (Date.now() - time) / 60000;
+}
+
 class AutoWorker {
   constructor(metaAgent) {
     this.metaAgent = metaAgent;
     this.memory = new Memory();
     this.timer = null;
+    this.notifier = null;
     this.lastRun = null;
     this.lastResult = 'AutoWorker ještě neběžel.';
     this.lastCodeReview = 'Audit kódu ještě neběžel.';
@@ -34,6 +42,10 @@ class AutoWorker {
     this.userId = process.env.AUTO_USER_ID || '';
     this.enabled = envFlag('AUTO_MODE');
     this.gitOk = false;
+  }
+
+  setNotifier(fn) {
+    this.notifier = typeof fn === 'function' ? fn : null;
   }
 
   start() {
@@ -82,8 +94,17 @@ class AutoWorker {
     this.lastRun = now();
 
     try {
-      const report = await this.safeAudit();
+      let report = await this.safeAudit();
       this.lastResult = report;
+
+      try {
+        await this.memory.addAudit(this.userId, report, {
+          source: 'auto-worker',
+          title: `Auto audit ${this.lastRun}`,
+        });
+      } catch (err) {
+        console.error('[auto] audit save failed:', err.message);
+      }
 
       if (envFlag('AUTO_STORE_AUDITS')) {
         await this.memory.addKnowledge(this.userId, report, {
@@ -92,15 +113,27 @@ class AutoWorker {
         });
       }
 
+      let improveResult = '';
       if (this.shouldRunAutoImprove()) {
-        const improveResult = await this.metaAgent.selfImprove.run((step) => console.log(`[auto] ${step}`));
+        improveResult = await this.metaAgent.selfImprove.run((step) => console.log(`[auto] ${step}`));
+        report += `\n\nAuto-improve:\n${improveResult}`;
+        this.lastResult = report;
+
+        try {
+          await this.memory.addAudit(this.userId, improveResult, {
+            source: 'auto-improve',
+            title: `Auto improve ${now()}`,
+          });
+        } catch (err) {
+          console.error('[auto] improve audit save failed:', err.message);
+        }
+
         if (envFlag('AUTO_STORE_AUDITS')) {
           await this.memory.addKnowledge(this.userId, improveResult, {
             source: 'auto-improve',
             title: `Auto improve ${now()}`,
           });
         }
-        this.lastResult += `\n\nAuto-improve:\n${improveResult}`;
       } else if (envFlag('AUTO_IMPROVE') || envFlag('ALLOW_AUTONOMOUS_WRITES')) {
         const reason = [
           !envFlag('ALLOW_AUTONOMOUS_WRITES') ? 'ALLOW_AUTONOMOUS_WRITES není true' : '',
@@ -109,13 +142,64 @@ class AutoWorker {
         ].filter(Boolean).join(', ');
         console.log(`[auto] Auto-improve skipped: ${reason || 'pojistka'}`);
       }
+
+      await this.maybeNotify(report, improveResult).catch((err) => {
+        console.error('[auto] proactive notify failed:', err.message);
+      });
     } finally {
       this.running = false;
     }
   }
 
+  async maybeNotify(report, improveResult = '') {
+    if (!this.notifier || !this.userId) return;
+
+    const proactive = await this.memory.getSetting(this.userId, 'proactiveMessages', envFlag('AUTO_PROACTIVE'));
+    if (!proactive) return;
+
+    const cooldownMinutes = Math.max(Number(process.env.AUTO_PROACTIVE_COOLDOWN_MINUTES || 60), 5);
+    const lastProactiveAt = await this.memory.getSetting(this.userId, 'lastProactiveAt', '');
+    if (minutesSince(lastProactiveAt) < cooldownMinutes) return;
+
+    const topSuggestions = String(report)
+      .split('\n')
+      .filter((line) => line.startsWith('• ') && (
+        line.includes('.js:')
+        || line.includes('Git workspace')
+        || line.includes('Auto-improve')
+        || line.includes('API klíč')
+        || line.includes('Paměť')
+      ))
+      .slice(0, 7);
+
+    const current = statusSummary();
+    const message = [
+      '🤖 Proaktivní návrh Martybotu',
+      `• Čas: ${now()}`,
+      `• Model: ${current.provider} / ${current.model}`,
+      `• Git workspace: ${this.gitOk ? 'OK' : 'není OK'}`,
+      `• Auto-improve: ${this.shouldRunAutoImprove() ? 'povoleno' : 'blokováno pojistkou'}`,
+      improveResult ? '• Provedl jsem i auto-improve a mám výsledek v auditech.' : '',
+      '',
+      'Co jsem našel:',
+      ...(topSuggestions.length ? topSuggestions : ['• Bez zásadních problémů. Doporučuji jen průběžný refaktor a kontrolu UX.']),
+      '',
+      'Rychlé akce:',
+      '• /auto code — detailní návrhy',
+      '• /improve — ruční self-improve',
+      '• /agent developer — přepnout na vývojáře',
+      '• /proactive off — vypnout tyhle zprávy',
+    ].filter(Boolean).join('\n');
+
+    await this.notifier(this.userId, message);
+    await this.memory.setSetting(this.userId, 'lastProactiveAt', now());
+    await this.memory.setSetting(this.userId, 'lastProactiveSummary', message);
+  }
+
   async codeReview(workdir = process.env.AGENT_WORKDIR || process.cwd()) {
     const files = [
+      'router-v2.js',
+      'meta-agent-v2.js',
       'router.js',
       'meta-agent.js',
       'sub-agents/executor.js',
@@ -152,7 +236,7 @@ class AutoWorker {
       `• Čas: ${now()}`,
       `• Workdir: ${workdir}`,
       '',
-      ...suggestions.slice(0, 12),
+      ...suggestions.slice(0, 14),
       '',
       'Bezpečnostní režim: pouze návrhy. Kód se automaticky nemění, pokud nejsou zapnuté všechny pojistky.',
     ].join('\n');
@@ -209,7 +293,7 @@ class AutoWorker {
     }
 
     const stats = await this.memory.stats(this.userId);
-    checks.push(`Paměť: ${stats.knowledge} poznámek, ${stats.messages} zpráv`);
+    checks.push(`Paměť: ${stats.knowledge} poznámek, ${stats.messages} zpráv, ${stats.audits || 0} auditů`);
 
     return `🤖 Auto audit\n${checks.map((line) => `• ${line}`).join('\n')}\n\n${review}`;
   }
@@ -222,6 +306,7 @@ class AutoWorker {
       `• Interval: ${Math.round(this.intervalMs / 60000)} min`,
       `• AUTO_USER_ID: ${this.userId || 'nenastaven'}`,
       `• Poslední běh: ${this.lastRun || 'zatím nikdy'}`,
+      `• Proaktivní notifikace: ${this.notifier ? 'napojené' : 'nenapojené'}`,
       '',
       this.lastResult,
       '',
@@ -230,6 +315,8 @@ class AutoWorker {
       `• ALLOW_AUTONOMOUS_WRITES: ${envFlag('ALLOW_AUTONOMOUS_WRITES') ? 'true' : 'false'}`,
       `• AUTO_IMPROVE_CONFIRMED: ${envFlag('AUTO_IMPROVE_CONFIRMED') ? 'true' : 'false'}`,
       `• GIT_AUTO_SETUP: ${envFlag('GIT_AUTO_SETUP') ? 'true' : 'false'}`,
+      `• AUTO_PROACTIVE: ${envFlag('AUTO_PROACTIVE') ? 'true' : 'false'}`,
+      `• AUTO_PROACTIVE_COOLDOWN_MINUTES: ${process.env.AUTO_PROACTIVE_COOLDOWN_MINUTES || 60}`,
       `• AUTO_STORE_AUDITS: ${envFlag('AUTO_STORE_AUDITS') ? 'true' : 'false'}`,
       'Autonomní změny kódu se spustí jen když jsou AUTO_IMPROVE=true, ALLOW_AUTONOMOUS_WRITES=true, AUTO_IMPROVE_CONFIRMED=true a git workspace je OK.',
     ].join('\n');
