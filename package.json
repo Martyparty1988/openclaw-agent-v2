@@ -3,26 +3,17 @@
   "version": "2.0.0",
   "private": true,
   "type": "commonjs",
-  "description": "Martybot OpenClaw agent router for Railway, Telegram, WhatsApp and web UI.",
+  "description": "Martybot lite Railway router for web API and WhatsApp pairing.",
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "scripts": {
-    "start": "node router-wa-fixed.js",
-    "start:v2": "node router-v2.js",
-    "start:old": "node router.js",
-    "preflight": "node scripts/deploy-preflight.js"
+    "start": "node router-lite-wa.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "latest",
-    "@builderbot/bot": "latest",
-    "@builderbot/provider-baileys": "latest",
-    "@supabase/supabase-js": "latest",
-    "@whiskeysockets/baileys": "latest",
-    "dotenv": "latest",
-    "node-telegram-bot-api": "latest",
-    "nodemailer": "latest",
-    "openai": "latest",
-    "pino": "latest"
+    "@whiskeysockets/baileys": "^6.7.18",
+    "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^0.66.0",
+    "pino": "^9.5.0"
   }
 }
