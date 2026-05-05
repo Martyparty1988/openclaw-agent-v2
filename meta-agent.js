@@ -18,7 +18,7 @@ const {
 } = require('./sub-agents/model-presets');
 
 const COMMANDS = {
-  git: ['git', 'git status', 'git setup', 'git pull', 'repo'],
+  git: ['git', 'git status', 'git setup', 'git pull', 'git push', 'repo'],
   auto: ['auto', 'autonomně', 'autonomne', 'autonomie', 'autonomní režim', 'autonomni rezim'],
   model: ['model', 'models', 'přepni model', 'prepni model', 'jazykový model', 'jazykovy model'],
   email: ['email', 'mail', 'send email', 'pošli email', 'posli email', 'pošli mail', 'posli mail'],
@@ -26,14 +26,15 @@ const COMMANDS = {
   backup: ['backup', 'záloha', 'zaloha', 'export memory', 'export paměti', 'export pameti'],
   restore: ['restore', 'obnov', 'import memory', 'import paměti', 'import pameti'],
   remember: ['remember', 'zapamatuj', 'ulož', 'uloz', 'pamatuj'],
-  facts: ['facts', 'poznámky', 'poznamky', 'paměť', 'pamet', 'knowledge'],
-  memoryclear: ['clear facts', 'smaž poznámky', 'smaz poznamky', 'clear knowledge'],
+  forgetfact: ['forgetfact', 'forget fact', 'forget memory', 'delete fact', 'smaž poznámku', 'smaz poznamku'],
+  facts: ['facts', 'memory', 'memories', 'poznámky', 'poznamky', 'paměť', 'pamet', 'knowledge', 'znalosti'],
+  memoryclear: ['clear facts', 'smaž poznámky', 'smaz poznamky', 'clear knowledge', 'clear memory'],
   analyze: ['analyze', 'analyzuj', 'analyse'],
   plan: ['plan', 'plán', 'naplánuj'],
   execute: ['execute', 'exec', 'spusť', 'spust', 'udělej', 'udelej'],
   improve: ['improve', 'zlepši', 'zlepsi', 'vylepši', 'vylepsi', 'vylepši svůj kód', 'vylepsi svuj kod', 'self-improve', 'refactor self'],
   webimprove: ['web improve', 'improve web', 'zlepši web', 'zlepsi web', 'vylepši web', 'vylepsi web', 'update web'],
-  reset: ['reset', 'zapomeň', 'zapomen', 'forget', 'clear'],
+  reset: ['reset', 'zapomeň', 'zapomen', 'clear chat'],
   help: ['start', 'help', 'pomoc', 'příkazy', 'prikazy'],
   status: ['status', 'stav'],
   chat: [],
@@ -48,7 +49,6 @@ function parseCommand(text) {
   const normalized = normalizeIncomingText(text);
   const lower = normalized.toLowerCase().trim();
 
-  // Keep multi-word git commands usable while still routing to the git handler.
   if (lower === 'git' || lower.startsWith('git ')) {
     return { command: 'git', task: normalized.slice(3).trim() };
   }
@@ -64,10 +64,46 @@ function parseCommand(text) {
   return { command: 'chat', task: normalized };
 }
 
+function cleanRememberText(text) {
+  return String(text || '')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('/'))
+    .join('\n')
+    .trim();
+}
+
+function looksLikeLanguageCorruption(text) {
+  const s = String(text || '').trim();
+  if (!s) return true;
+  const lower = s.toLowerCase();
+  const weirdWords = ['autoskruvu', 'oczy', 'nacizení', 'prověkem', 'zupadi', 'estos', 'لف', 'نهضة'];
+  if (weirdWords.some((w) => lower.includes(w))) return true;
+  const nonLatin = (s.match(/[\u0600-\u06FF\u4E00-\u9FFF\u3040-\u30FF]/g) || []).length;
+  if (nonLatin > 0) return true;
+  const czSignals = (lower.match(/[ěščřžýáíéúůňťď]/g) || []).length;
+  const commonCzech = ['že', 'jsem', 'máš', 'můžeš', 'nastav', 'použij', 'oprava', 'paměť', 'repozitář', 'token', 'railway'];
+  const hasCommonCzech = commonCzech.some((w) => lower.includes(w));
+  return s.length > 180 && czSignals < 5 && !hasCommonCzech;
+}
+
+function safeFallbackReply(task) {
+  const lower = String(task || '').toLowerCase();
+  if (lower.includes('memory') || lower.includes('pamě') || lower.includes('pamet')) {
+    return 'Pro zobrazení uložené paměti napiš /facts. Pro uložení nové poznámky použij /remember text poznámky.';
+  }
+  if (lower.includes('git') || lower.includes('token')) {
+    return 'Git push teď blokují práva tokenu. V Railway musí být nový GitHub token s oprávněním Contents: Read and write pro repo Martyparty1988/openclaw-agent-v2. Token patří jen do Railway Variables.';
+  }
+  return 'Promiň, odpověď modelu byla nečitelná. Použij prosím /help, /status, /facts, /git nebo /auto run.';
+}
+
 function friendlyError(err) {
   const raw = [err?.message, err?.stack, JSON.stringify(err || {})].filter(Boolean).join('\n');
   const lower = raw.toLowerCase();
 
+  if (lower.includes('write access to repository not granted') || lower.includes('requested url returned error: 403')) {
+    return 'GitHub odmítl push. GIT_TOKEN má nejspíš jen read-only práva. Vytvoř nový Fine-grained token pro repo openclaw-agent-v2 s oprávněním Contents: Read and write, vlož ho do Railway jako GIT_TOKEN, dej redeploy a spusť /git push.';
+  }
   if (lower.includes('credit balance is too low') || lower.includes('purchase credits') || lower.includes('plans & billing')) {
     return 'Claude/Anthropic API nemá kredit. Buď dobij kredit v Anthropic Console, nebo použij /model openrouter free.';
   }
@@ -82,9 +118,6 @@ function friendlyError(err) {
   }
   if (lower.includes('connection error')) {
     return 'Connection error při volání AI API. Zkontroluj klíč, kredit/billing a zkus redeploy. Pro free režim použij /model openrouter free.';
-  }
-  if (lower.includes('not found') && lower.includes('git')) {
-    return 'V Railway kontejneru zřejmě není dostupný git. Zkus v Railway build/runtime ověřit, že image obsahuje git, nebo použij Nixpacks/Node runtime s gitem.';
   }
   return err?.message || 'Neznámá systémová chyba.';
 }
@@ -128,7 +161,6 @@ class MetaAgent {
   async handle(msg) {
     const { userId, platform, text, reply } = msg;
     const { command, task } = parseCommand(text);
-
     console.log(`[${platform.toUpperCase()}][${userId}] ${command}: ${task || '—'}`);
 
     try {
@@ -150,51 +182,40 @@ class MetaAgent {
             await reply(out);
             break;
           }
-          if (action === 'pull' || action === 'update' || action === 'aktualizuj') {
+          if (['pull', 'update', 'aktualizuj'].includes(action)) {
             await reply('⬇️ Dělám git pull...');
             const out = await this.gitWorkspace.pull();
             await reply(out);
             break;
           }
-          await reply('Použití: /git, /git status, /git setup, /git pull');
+          if (['push', 'doposlat', 'odeslat'].includes(action)) {
+            await reply('⬆️ Zkouším doposlat lokální commity na GitHub...');
+            const out = await this.gitWorkspace.push();
+            await reply(out);
+            break;
+          }
+          await reply('Použití: /git, /git status, /git setup, /git pull, /git push');
           break;
         }
 
         case 'auto': {
-          if (!this.autoWorker) {
-            await reply('❌ Autonomní worker není připojený v routeru.');
-            break;
-          }
-
+          if (!this.autoWorker) return reply('❌ Autonomní worker není připojený v routeru.');
           const action = String(task || 'status').trim().toLowerCase();
-          if (!action || action === 'status' || action === 'stav') {
-            await reply(this.autoWorker.statusText());
-            break;
-          }
+          if (!action || action === 'status' || action === 'stav') return reply(this.autoWorker.statusText());
           if (action === 'on' || action === 'zapnout') {
             this.autoWorker.enable(userId);
-            await reply([
-              '✅ Autonomní režim zapnutý pro aktuální běh procesu.',
-              '',
-              this.autoWorker.statusText(),
-              '',
-              'Natrvalo nastav v Railway Variables: AUTO_MODE=true a AUTO_USER_ID=' + userId,
-            ].join('\n'));
-            break;
+            return reply(['✅ Autonomní režim zapnutý pro aktuální běh procesu.', '', this.autoWorker.statusText(), '', 'Natrvalo nastav v Railway Variables: AUTO_MODE=true a AUTO_USER_ID=' + userId].join('\n'));
           }
           if (action === 'off' || action === 'vypnout') {
             this.autoWorker.stop();
-            await reply('🛑 Autonomní režim vypnutý pro aktuální běh procesu. Natrvalo nastav AUTO_MODE=false v Railway.');
-            break;
+            return reply('🛑 Autonomní režim vypnutý pro aktuální běh procesu. Natrvalo nastav AUTO_MODE=false v Railway.');
           }
           if (action === 'run' || action === 'teď' || action === 'ted') {
             await reply('🤖 Spouštím jednorázový auto audit...');
             this.autoWorker.userId = userId;
             await this.autoWorker.tick();
-            await reply(this.autoWorker.statusText());
-            break;
+            return reply(this.autoWorker.statusText());
           }
-
           await reply('Použití: /auto, /auto on, /auto off, /auto run, /auto status');
           break;
         }
@@ -206,19 +227,9 @@ class MetaAgent {
             break;
           }
           const selected = applyPreset(task);
-          if (!selected) {
-            await reply(`❌ Neznámý model preset: ${task}\n\n${listPresetsText()}`);
-            break;
-          }
+          if (!selected) return reply(`❌ Neznámý model preset: ${task}\n\n${listPresetsText()}`);
           const current = statusSummary();
-          await reply([
-            '✅ Model přepnut pro aktuálně běžící bot proces.',
-            `• Provider: ${current.provider}`,
-            `• Model: ${current.model}`,
-            `• API klíč: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`,
-            '',
-            'Poznámka: přepnutí přes chat platí do restartu/redeploye. Natrvalo nastav stejné hodnoty v Railway Variables.',
-          ].join('\n'));
+          await reply(['✅ Model přepnut pro aktuálně běžící bot proces.', `• Provider: ${current.provider}`, `• Model: ${current.model}`, `• API klíč: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`, '', 'Poznámka: přepnutí přes chat platí do restartu/redeploye. Natrvalo nastav stejné hodnoty v Railway Variables.'].join('\n'));
           break;
         }
 
@@ -228,7 +239,7 @@ class MetaAgent {
           const current = statusSummary();
           await reply([
             '🩺 Stav bota',
-            `• Jazyk: čeština natvrdo`,
+            '• Jazyk: čeština natvrdo',
             `• LLM provider: ${provider}`,
             `• Model: ${getModelForProvider(provider)}`,
             `• API klíč pro provider: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`,
@@ -284,9 +295,17 @@ class MetaAgent {
         }
 
         case 'remember': {
-          if (!task) return reply('❌ Napiš co si mám zapamatovat. Příklad: /remember Martin pracuje na Railway botovi.');
-          const item = await this.memory.addKnowledge(userId, task, { source: 'manual' });
+          const clean = cleanRememberText(task);
+          if (!clean) return reply('❌ Napiš co si mám zapamatovat. Příklad: /remember Martin pracuje na Railway botovi.');
+          const item = await this.memory.addKnowledge(userId, clean, { source: 'manual' });
           await reply(`✅ Uloženo do trvalé paměti.\nID: ${item.id}`);
+          break;
+        }
+
+        case 'forgetfact': {
+          if (!task) return reply('❌ Použití: /forgetfact ID_poznámky');
+          const result = await this.memory.removeKnowledge(userId, task);
+          await reply(result.removed ? `🗑️ Poznámka smazána. Zbývá: ${result.remaining}` : 'ℹ️ Poznámku s tímto ID jsem nenašel.');
           break;
         }
 
@@ -337,8 +356,7 @@ class MetaAgent {
               const result = await this.executor.run(userId, plan, (s) => steps.push(s));
               await this.memory.add(userId, 'user', text);
               await this.memory.add(userId, 'assistant', result.output);
-              const summary = ['✅ Hotovo!', '', result.output, steps.length ? `\n🔧 ${steps.length} kroků provedeno` : ''].filter(Boolean).join('\n');
-              await reply(summary);
+              await reply(['✅ Hotovo!', '', result.output, steps.length ? `\n🔧 ${steps.length} kroků provedeno` : ''].filter(Boolean).join('\n'));
             } catch (err) {
               await reply(`❌ Chyba: ${friendlyError(err)}`);
             }
@@ -377,12 +395,13 @@ class MetaAgent {
           await reply('💬 Přemýšlím...');
           const history = await this.memory.getHistory(userId);
           const knowledge = await this.memory.getKnowledgeContext(userId);
-          const czechInstruction = 'Vždy odpovídej česky, přátelsky, prakticky a krok za krokem. Nepoužívej polštinu ani angličtinu, pokud o to uživatel výslovně nepožádá.';
+          const czechInstruction = 'Vždy odpovídej česky, přátelsky, prakticky a krok za krokem. Nepoužívej polštinu ani angličtinu, pokud o to uživatel výslovně nepožádá. Když uživatel napíše Memory nebo paměť, vysvětli mu příkaz /facts.';
           const enrichedTask = [czechInstruction, knowledge ? `Relevantní trvalá paměť o uživateli a projektu:\n${knowledge}` : '', `Aktuální zpráva uživatele:\n${task}`].filter(Boolean).join('\n\n');
           const result = await this.executor.chat(userId, enrichedTask, history);
+          const cleanResult = looksLikeLanguageCorruption(result) ? safeFallbackReply(task) : result;
           await this.memory.add(userId, 'user', task);
-          await this.memory.add(userId, 'assistant', result);
-          await reply(result);
+          await this.memory.add(userId, 'assistant', cleanResult);
+          await reply(cleanResult);
           break;
         }
       }
@@ -405,6 +424,7 @@ Příkazy:
 • /git — stav git workspace
 • /git setup — naklonuje/opraví git workspace v AGENT_WORKDIR
 • /git pull — aktualizuje git workspace
+• /git push — doposílá lokální commity na GitHub
 • /auto — stav autonomního režimu
 • /auto on — zapne autonomní režim pro aktuální běh
 • /auto off — vypne autonomní režim pro aktuální běh
@@ -416,7 +436,8 @@ Příkazy:
 • /restore <JSON> — obnoví/sloučí zálohu paměti
 • /email komu@example.com | Předmět | Text — odešle email přes SMTP
 • /remember <text> — uloží trvalou poznámku
-• /facts — ukáže trvalé poznámky
+• /facts nebo Memory — ukáže trvalé poznámky
+• /forgetfact <ID> — smaže jednu konkrétní poznámku
 • /analyze <co> — analyzuje soubor nebo kód
 • /plan <úkol> — vytvoří plán
 • /execute <úkol> — spustí agenta async
