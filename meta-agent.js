@@ -1,5 +1,5 @@
-// meta-agent.js — Orchestrator that routes tasks to sub-agents
-// Planner → Executor → Memory → SelfImprove → Email → Learner → AutoWorker → GitWorkspace
+// meta-agent.js — Martybot orchestrator
+// Routes commands to sub-agents and keeps responses Czech-first and safe.
 
 const Planner = require('./sub-agents/planner');
 const Executor = require('./sub-agents/executor');
@@ -17,7 +17,38 @@ const {
   getModelForProvider,
 } = require('./sub-agents/model-presets');
 
+const AGENT_MODES = {
+  general: {
+    label: 'General Manager',
+    prompt: 'Jsi obecný osobní asistent. Drž odpovědi praktické, stručné a česky.',
+  },
+  developer: {
+    label: 'Developer',
+    prompt: 'Jsi vývojářský agent. Zaměř se na kód, architekturu, chyby, testy, Railway, Vercel a GitHub.',
+  },
+  git: {
+    label: 'Git správce',
+    prompt: 'Jsi Git agent. Řeš bezpečně git status, pull, push, tokeny a práci s větvemi. Tokeny nikdy nevypisuj.',
+  },
+  memory: {
+    label: 'Memory správce',
+    prompt: 'Jsi správce paměti. Pomáhej ukládat, čistit a strukturovat dlouhodobé poznámky.',
+  },
+  deploy: {
+    label: 'Deploy Engineer',
+    prompt: 'Jsi deploy agent pro Railway/Vercel. Řeš logy, env proměnné, start commandy a diagnostiku.',
+  },
+  web: {
+    label: 'Web/UI Designer',
+    prompt: 'Jsi webový a UI agent. Navrhuj jednoduché iOS-friendly rozhraní, frontend a UX zlepšení.',
+  },
+};
+
+const userAgentModes = new Map();
+
 const COMMANDS = {
+  menu: ['menu', 'hlavni menu', 'hlavní menu'],
+  agent: ['agent', 'agents', 'agent mode', 'režim agenta', 'rezim agenta', 'vyber agenta', 'výběr agenta'],
   git: ['git', 'git status', 'git setup', 'git pull', 'git push', 'repo'],
   auto: ['auto', 'autonomně', 'autonomne', 'autonomie', 'autonomní režim', 'autonomni rezim'],
   model: ['model', 'models', 'přepni model', 'prepni model', 'jazykový model', 'jazykovy model'],
@@ -49,9 +80,9 @@ function parseCommand(text) {
   const normalized = normalizeIncomingText(text);
   const lower = normalized.toLowerCase().trim();
 
-  if (lower === 'git' || lower.startsWith('git ')) {
-    return { command: 'git', task: normalized.slice(3).trim() };
-  }
+  if (lower === 'git' || lower.startsWith('git ')) return { command: 'git', task: normalized.slice(3).trim() };
+  if (lower === 'auto' || lower.startsWith('auto ')) return { command: 'auto', task: normalized.slice(4).trim() };
+  if (lower === 'agent' || lower.startsWith('agent ')) return { command: 'agent', task: normalized.slice(5).trim() };
 
   for (const [cmd, keywords] of Object.entries(COMMANDS)) {
     for (const kw of keywords) {
@@ -88,37 +119,21 @@ function looksLikeLanguageCorruption(text) {
 
 function safeFallbackReply(task) {
   const lower = String(task || '').toLowerCase();
-  if (lower.includes('memory') || lower.includes('pamě') || lower.includes('pamet')) {
-    return 'Pro zobrazení uložené paměti napiš /facts. Pro uložení nové poznámky použij /remember text poznámky.';
-  }
-  if (lower.includes('git') || lower.includes('token')) {
-    return 'Git push teď blokují práva tokenu. V Railway musí být nový GitHub token s oprávněním Contents: Read and write pro repo Martyparty1988/openclaw-agent-v2. Token patří jen do Railway Variables.';
-  }
-  return 'Promiň, odpověď modelu byla nečitelná. Použij prosím /help, /status, /facts, /git nebo /auto run.';
+  if (lower.includes('memory') || lower.includes('pamě') || lower.includes('pamet')) return 'Pro zobrazení uložené paměti napiš /facts. Pro uložení nové poznámky použij /remember text poznámky.';
+  if (lower.includes('git') || lower.includes('token')) return 'Git push teď blokují práva tokenu. V Railway musí být GitHub token s oprávněním Contents: Read and write pro repo Martyparty1988/openclaw-agent-v2.';
+  return 'Promiň, odpověď modelu byla nečitelná. Použij /menu, /help, /status, /facts, /git nebo /auto run.';
 }
 
 function friendlyError(err) {
   const raw = [err?.message, err?.stack, JSON.stringify(err || {})].filter(Boolean).join('\n');
   const lower = raw.toLowerCase();
 
-  if (lower.includes('write access to repository not granted') || lower.includes('requested url returned error: 403')) {
-    return 'GitHub odmítl push. GIT_TOKEN má nejspíš jen read-only práva. Vytvoř nový Fine-grained token pro repo openclaw-agent-v2 s oprávněním Contents: Read and write, vlož ho do Railway jako GIT_TOKEN, dej redeploy a spusť /git push.';
-  }
-  if (lower.includes('credit balance is too low') || lower.includes('purchase credits') || lower.includes('plans & billing')) {
-    return 'Claude/Anthropic API nemá kredit. Buď dobij kredit v Anthropic Console, nebo použij /model openrouter free.';
-  }
-  if (lower.includes('missing authentication header') || lower.includes('401')) {
-    return 'API klíč pro aktuální provider chybí nebo je špatně vložený. Zkontroluj Railway Variables pro aktuální model.';
-  }
-  if (lower.includes('invalid api key') || lower.includes('authentication') || lower.includes('unauthorized')) {
-    return 'API klíč je špatný nebo chybí. Zkontroluj Railway Variables klíč pro aktuální LLM provider.';
-  }
-  if (lower.includes('not a legal http header value') || lower.includes('bytestring')) {
-    return 'V API klíči je placeholder nebo český znak. Smaž hodnotu typu „tvůj_klíč“ a vlož skutečný API key bez uvozovek a mezer.';
-  }
-  if (lower.includes('connection error')) {
-    return 'Connection error při volání AI API. Zkontroluj klíč, kredit/billing a zkus redeploy. Pro free režim použij /model openrouter free.';
-  }
+  if (lower.includes('write access to repository not granted') || lower.includes('requested url returned error: 403')) return 'GitHub odmítl push. GIT_TOKEN má nejspíš jen read-only práva. Vytvoř nový Fine-grained token pro repo openclaw-agent-v2 s oprávněním Contents: Read and write, vlož ho do Railway jako GIT_TOKEN, dej redeploy a spusť /git push.';
+  if (lower.includes('credit balance is too low') || lower.includes('purchase credits') || lower.includes('plans & billing')) return 'Claude/Anthropic API nemá kredit. Buď dobij kredit v Anthropic Console, nebo použij /model openrouter free.';
+  if (lower.includes('missing authentication header') || lower.includes('401')) return 'API klíč pro aktuální provider chybí nebo je špatně vložený. Zkontroluj Railway Variables pro aktuální model.';
+  if (lower.includes('invalid api key') || lower.includes('authentication') || lower.includes('unauthorized')) return 'API klíč je špatný nebo chybí. Zkontroluj Railway Variables klíč pro aktuální LLM provider.';
+  if (lower.includes('not a legal http header value') || lower.includes('bytestring')) return 'V API klíči je placeholder nebo český znak. Smaž hodnotu typu „tvůj_klíč“ a vlož skutečný API key bez uvozovek a mezer.';
+  if (lower.includes('connection error')) return 'Connection error při volání AI API. Zkontroluj klíč, kredit/billing a zkus redeploy. Pro free režim použij /model openrouter free.';
   return err?.message || 'Neznámá systémová chyba.';
 }
 
@@ -141,6 +156,38 @@ function modeNote(provider) {
   return 'Neznámý provider.';
 }
 
+function agentModeText(current = 'general') {
+  return [
+    '🧠 Výběr agenta',
+    `Aktuální agent: ${AGENT_MODES[current]?.label || current}`,
+    '',
+    ...Object.entries(AGENT_MODES).map(([key, mode]) => `• /agent ${key} — ${mode.label}`),
+    '',
+    'Tip: napiš třeba /agent developer nebo /agent deploy.',
+  ].join('\n');
+}
+
+function menuText(currentAgent = 'general') {
+  return [
+    '📲 Martybot menu',
+    `Aktuální agent: ${AGENT_MODES[currentAgent]?.label || currentAgent}`,
+    '',
+    'Rychlé volby:',
+    '• /status — stav bota',
+    '• /agent — výběr agenta',
+    '• /auto code — autonomní analýza kódu + návrhy',
+    '• /auto run — kompletní auto audit',
+    '• /git — stav git workspace',
+    '• /git push — doposlat lokální commity',
+    '• /facts — trvalá paměť',
+    '• /remember <text> — uložit poznámku',
+    '• /improve — bezpečný self-improve cyklus',
+    '',
+    'Agent režimy:',
+    'General / Developer / Git / Memory / Deploy / Web',
+  ].join('\n');
+}
+
 class MetaAgent {
   constructor() {
     this.planner = new Planner();
@@ -158,6 +205,17 @@ class MetaAgent {
     this.autoWorker = autoWorker;
   }
 
+  getAgentMode(userId) {
+    return userAgentModes.get(userId) || process.env.DEFAULT_AGENT_MODE || 'general';
+  }
+
+  setAgentMode(userId, mode) {
+    const key = String(mode || '').toLowerCase().trim();
+    if (!AGENT_MODES[key]) return null;
+    userAgentModes.set(userId, key);
+    return key;
+  }
+
   async handle(msg) {
     const { userId, platform, text, reply } = msg;
     const { command, task } = parseCommand(text);
@@ -165,6 +223,18 @@ class MetaAgent {
 
     try {
       switch (command) {
+        case 'menu':
+          await reply(menuText(this.getAgentMode(userId)));
+          break;
+
+        case 'agent': {
+          if (!task) return reply(agentModeText(this.getAgentMode(userId)));
+          const selected = this.setAgentMode(userId, task);
+          if (!selected) return reply(`❌ Neznámý agent: ${task}\n\n${agentModeText(this.getAgentMode(userId))}`);
+          await reply(`✅ Agent přepnutý na: ${AGENT_MODES[selected].label}\n\n${menuText(selected)}`);
+          break;
+        }
+
         case 'help':
           await reply(HELP_TEXT);
           break;
@@ -202,6 +272,11 @@ class MetaAgent {
           if (!this.autoWorker) return reply('❌ Autonomní worker není připojený v routeru.');
           const action = String(task || 'status').trim().toLowerCase();
           if (!action || action === 'status' || action === 'stav') return reply(this.autoWorker.statusText());
+          if (['code', 'kod', 'kód', 'review', 'analyze', 'analyzuj'].includes(action)) {
+            await reply('🔍 Spouštím autonomní analýzu kódu bez zápisu...');
+            const out = await this.autoWorker.codeReview();
+            return reply(out);
+          }
           if (action === 'on' || action === 'zapnout') {
             this.autoWorker.enable(userId);
             return reply(['✅ Autonomní režim zapnutý pro aktuální běh procesu.', '', this.autoWorker.statusText(), '', 'Natrvalo nastav v Railway Variables: AUTO_MODE=true a AUTO_USER_ID=' + userId].join('\n'));
@@ -216,7 +291,7 @@ class MetaAgent {
             await this.autoWorker.tick();
             return reply(this.autoWorker.statusText());
           }
-          await reply('Použití: /auto, /auto on, /auto off, /auto run, /auto status');
+          await reply('Použití: /auto, /auto code, /auto on, /auto off, /auto run, /auto status');
           break;
         }
 
@@ -240,6 +315,7 @@ class MetaAgent {
           await reply([
             '🩺 Stav bota',
             '• Jazyk: čeština natvrdo',
+            `• Aktivní agent: ${AGENT_MODES[this.getAgentMode(userId)]?.label || this.getAgentMode(userId)}`,
             `• LLM provider: ${provider}`,
             `• Model: ${getModelForProvider(provider)}`,
             `• API klíč pro provider: ${current.tokenSet ? 'nastaven' : 'CHYBÍ'}`,
@@ -395,7 +471,13 @@ class MetaAgent {
           await reply('💬 Přemýšlím...');
           const history = await this.memory.getHistory(userId);
           const knowledge = await this.memory.getKnowledgeContext(userId);
-          const czechInstruction = 'Vždy odpovídej česky, přátelsky, prakticky a krok za krokem. Nepoužívej polštinu ani angličtinu, pokud o to uživatel výslovně nepožádá. Když uživatel napíše Memory nebo paměť, vysvětli mu příkaz /facts.';
+          const agentMode = this.getAgentMode(userId);
+          const czechInstruction = [
+            'Vždy odpovídej česky, přátelsky, prakticky a krok za krokem.',
+            'Nepoužívej polštinu ani angličtinu, pokud o to uživatel výslovně nepožádá.',
+            `Aktivní agent: ${AGENT_MODES[agentMode]?.label || agentMode}.`,
+            AGENT_MODES[agentMode]?.prompt || AGENT_MODES.general.prompt,
+          ].join(' ');
           const enrichedTask = [czechInstruction, knowledge ? `Relevantní trvalá paměť o uživateli a projektu:\n${knowledge}` : '', `Aktuální zpráva uživatele:\n${task}`].filter(Boolean).join('\n\n');
           const result = await this.executor.chat(userId, enrichedTask, history);
           const cleanResult = looksLikeLanguageCorruption(result) ? safeFallbackReply(task) : result;
@@ -419,18 +501,17 @@ function formatPlan(plan) {
 const HELP_TEXT = `🤖 OpenClaw Meta-Agent
 
 Příkazy:
-• /start nebo /help — nápověda
+• /menu — hlavní menu
+• /agent — výběr režimu agenta
 • /status — stav providera/modelu/paměti/emailu
 • /git — stav git workspace
 • /git setup — naklonuje/opraví git workspace v AGENT_WORKDIR
 • /git pull — aktualizuje git workspace
 • /git push — doposílá lokální commity na GitHub
 • /auto — stav autonomního režimu
-• /auto on — zapne autonomní režim pro aktuální běh
-• /auto off — vypne autonomní režim pro aktuální běh
-• /auto run — spustí jednorázový auto audit
+• /auto code — autonomně analyzuje kód a navrhne vylepšení bez zápisu
+• /auto run — kompletní auto audit
 • /model — vypíše dostupné modely
-• /model openrouter free — přepne na free OpenRouter router
 • /learn <text nebo URL> — uloží veřejný zdroj nebo text do znalostí
 • /backup — pošle JSON zálohu paměti
 • /restore <JSON> — obnoví/sloučí zálohu paměti
@@ -444,8 +525,9 @@ Příkazy:
 • /improve nebo vylepši svůj kód — self-improve cyklus
 • /reset — smaže jen konverzační paměť
 
+Agent režimy: /agent general, /agent developer, /agent git, /agent memory, /agent deploy, /agent web.
 Jazyk: čeština natvrdo.
-Autonomní zápisy kódu vyžadují AUTO_IMPROVE=true a ALLOW_AUTONOMOUS_WRITES=true v Railway.
+Autonomní zápisy kódu vyžadují AUTO_IMPROVE=true, ALLOW_AUTONOMOUS_WRITES=true, AUTO_IMPROVE_CONFIRMED=true a funkční git workspace.
 Klíče zůstávají pouze v Railway Variables.`;
 
 module.exports = MetaAgent;
