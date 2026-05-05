@@ -1,0 +1,23 @@
+{
+  "name": "openclaw-agent-railway-main-wrapper",
+  "version": "2.2.0",
+  "private": true,
+  "description": "Railway compatibility wrapper when Root Directory is accidentally set to main.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "postinstall": "node prepare-main.js",
+    "start": "NODE_PATH=./node_modules node scripts/ensure-git-workdir.js && NODE_PATH=./node_modules node router.js",
+    "check": "NODE_PATH=./node_modules node --check router.js && NODE_PATH=./node_modules node --check meta-agent.js && NODE_PATH=./node_modules node --check sub-agents/memory.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@builderbot/bot": "^1.2.0",
+    "@builderbot/provider-baileys": "^1.2.0",
+    "@supabase/supabase-js": "^2.49.4",
+    "dotenv": "^16.0.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "nodemailer": "^6.9.16"
+  }
+}
