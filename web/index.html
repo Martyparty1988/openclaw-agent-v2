@@ -1,226 +1,154 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="cs">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="manifest.webmanifest">
-    <link rel="icon" type="image/svg+xml" href="icon.svg">
-    <title>Martybot OS</title>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    
-    <style>
-        :root {
-            --neon: #3dff7a;
-            --bg: #050a05;
-            --glass: rgba(255, 255, 255, 0.03);
-        }
-        
-        body {
-            background: var(--bg);
-            color: white;
-            font-family: 'JetBrains Mono', monospace;
-            height: 100vh;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        /* Glassmorphism */
-        .glass {
-            background: var(--glass);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(61, 255, 122, 0.1);
-        }
-
-        .neon-text {
-            color: var(--neon);
-            text-shadow: 0 0 10px rgba(61, 255, 122, 0.5);
-        }
-
-        /* Sekce - SPA logika */
-        .page-section {
-            display: none;
-            height: 100%;
-            overflow-y: auto;
-            padding-bottom: 100px; /* Space for nav */
-        }
-        .page-section.active {
-            display: block;
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Custom Scrollbar */
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        
-        /* Bottom Nav Active State */
-        .nav-item.active {
-            color: var(--neon);
-        }
-        .nav-item.active svg {
-            filter: drop-shadow(0 0 5px var(--neon));
-        }
-
-        .safe-top { padding-top: env(safe-area-inset-top); }
-        .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#060d09">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Martybot">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <title>Martybot</title>
+  <style>
+    :root{
+      color-scheme:dark;
+      --bg:#060d09;--bg2:#0b1710;--surface:rgba(16,30,20,.9);--surf2:rgba(255,255,255,.055);
+      --line:rgba(46,255,112,.16);--line2:rgba(255,255,255,.09);--green:#2eff70;--green2:#1acc58;
+      --blue:#5cb8ff;--red:#ff4d6b;--yellow:#ffcc44;--text:#dffae6;--muted:rgba(223,250,230,.56);
+      --shadow:0 24px 80px rgba(0,0,0,.5);--r:22px;--r2:16px;--tab-h:76px;
+      --safe-b:max(12px,env(safe-area-inset-bottom));--safe-t:env(safe-area-inset-top);
+      font-family:'Figtree',system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    *,*:before,*:after{box-sizing:border-box;-webkit-tap-highlight-color:transparent}html,body{height:100%}
+    body{margin:0;background:radial-gradient(ellipse at 18% -8%,rgba(46,255,112,.13) 0,transparent 32rem),radial-gradient(ellipse at 92% 6%,rgba(92,184,255,.09) 0,transparent 28rem),var(--bg);color:var(--text);padding:var(--safe-t) 0 var(--safe-b);overflow-x:hidden;overscroll-behavior:none}
+    body:before{content:"";position:fixed;inset:0;background:linear-gradient(rgba(255,255,255,.014) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.01) 1px,transparent 1px);background-size:44px 44px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.55),transparent 75%);pointer-events:none}
+    button,input,textarea,select{font:inherit;color:var(--text)}button{border:0;cursor:pointer;background:none}a{color:var(--blue)}::selection{background:rgba(46,255,112,.25)}
+    ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:4px}
+    .app{max-width:1180px;margin:0 auto;padding:14px 14px calc(var(--tab-h) + var(--safe-b) + 14px)}
+    .top{position:sticky;top:0;z-index:30;padding:10px 0 14px;background:linear-gradient(to bottom,rgba(6,13,9,.97) 72%,transparent);backdrop-filter:blur(20px)}
+    .hero{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{display:flex;gap:12px;align-items:center;min-width:0}.avatar{width:52px;height:52px;flex:0 0 52px;border-radius:18px;display:grid;place-items:center;font-size:26px;background:linear-gradient(145deg,rgba(46,255,112,.2),rgba(92,184,255,.07));border:1px solid var(--line);box-shadow:0 0 0 4px rgba(46,255,112,.04),0 12px 40px rgba(46,255,112,.08);position:relative}.avatar:after{content:"";position:absolute;right:7px;bottom:7px;width:11px;height:11px;border-radius:50%;background:var(--red);box-shadow:0 0 0 3px rgba(6,13,9,.9)}.avatar.online{box-shadow:0 0 0 4px rgba(46,255,112,.1),0 12px 40px rgba(46,255,112,.18)}.avatar.online:after{background:var(--green);animation:pulse 2.5s ease-in-out infinite}@keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(6,13,9,.9),0 0 0 5px rgba(46,255,112,0)}50%{box-shadow:0 0 0 3px rgba(6,13,9,.9),0 0 0 7px rgba(46,255,112,.3)}}
+    .brand-text{min-width:0}.brand-text h1{font-family:'Chakra Petch',sans-serif;font-size:26px;font-weight:700;margin:0;letter-spacing:-.02em;line-height:1}.brand-text p{font-size:13px;color:var(--muted);margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.status-pill{border:1px solid var(--line);border-radius:999px;padding:9px 15px;color:var(--green);background:rgba(46,255,112,.08);font-size:12px;font-weight:700;white-space:nowrap;font-family:'JetBrains Mono',monospace}.status-pill.bad{color:var(--red);border-color:rgba(255,77,107,.3);background:rgba(255,77,107,.08)}.status-pill.warn{color:var(--yellow);border-color:rgba(255,204,68,.3);background:rgba(255,204,68,.08)}
+    .stats{display:grid;grid-template-columns:1.3fr repeat(3,1fr);gap:10px;margin:13px 0 0}.stat{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03));border:1px solid var(--line2);border-radius:18px;padding:12px 14px;min-width:0}.stat.primary{background:linear-gradient(145deg,rgba(46,255,112,.11),rgba(255,255,255,.03));border-color:rgba(46,255,112,.24)}.stat small{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:11px;font-weight:500}.stat b{display:block;margin-top:5px;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ok{color:var(--green)!important}.bad{color:var(--red)!important}.warn{color:var(--yellow)!important}
+    .view{display:none}.view.active{display:block}.layout{display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:14px}.panel,.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);backdrop-filter:blur(24px);overflow:hidden}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line2)}.panel-head h2,.sec-title,.sblock h2{font-family:'Chakra Petch',monospace;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--green);margin:0}.head-btns{display:flex;gap:8px}.ghost-btn{background:var(--surf2);border:1px solid var(--line2);border-radius:12px;padding:7px 12px;font-size:13px;transition:.15s}.ghost-btn:hover{border-color:var(--line);background:rgba(46,255,112,.08)}.primary-btn{width:100%;padding:11px;background:linear-gradient(135deg,var(--green),#80ffb0);color:#041008;font-weight:700;font-size:14px;border-radius:13px;box-shadow:0 8px 24px rgba(46,255,112,.16);transition:.15s}.primary-btn:hover{transform:translateY(-1px);box-shadow:0 12px 30px rgba(46,255,112,.26)}
+    .chat-panel{height:calc(100vh - 230px);min-height:500px;display:flex;flex-direction:column}.messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}.msg-wrap{display:flex;flex-direction:column;max-width:86%}.msg-wrap.me{align-self:flex-end;align-items:flex-end}.msg-wrap.bot{align-self:flex-start}.msg-wrap.sys{align-self:center;max-width:96%}.msg{padding:11px 14px;border-radius:18px;font-size:14.5px;line-height:1.58;word-break:break-word;position:relative}.me .msg{background:linear-gradient(135deg,var(--green),#80ffb0);color:#041008;border-bottom-right-radius:5px;box-shadow:0 8px 28px rgba(46,255,112,.2);font-weight:500}.bot .msg{background:rgba(255,255,255,.068);border:1px solid var(--line2);border-bottom-left-radius:5px}.sys .msg{background:rgba(0,0,0,.15);border:1px dashed rgba(255,255,255,.14);color:var(--muted);font-size:12.5px;text-align:center;border-radius:14px}.msg-time{font-size:11px;color:var(--muted);margin-top:4px;padding:0 4px;font-family:'JetBrains Mono',monospace}.msg code{font-family:'JetBrains Mono',monospace;font-size:13px;background:rgba(0,0,0,.32);border-radius:5px;padding:1px 6px}.msg pre{background:rgba(0,0,0,.42);border:1px solid var(--line2);border-radius:10px;padding:11px 13px;overflow-x:auto;margin:8px 0 4px;font-size:13px;line-height:1.6}.msg pre code{background:none;padding:0}.msg ul,.msg ol{padding-left:18px;margin:6px 0}.msg li{margin:3px 0}.msg h3{font-size:14.5px;margin:10px 0 4px}.msg blockquote{border-left:3px solid var(--line);padding-left:10px;margin:6px 0;color:var(--muted)}.msg hr{border:0;border-top:1px solid var(--line2);margin:10px 0}
+    .typing-wrap{display:none;padding:4px 16px 8px;color:var(--muted);font-size:13px}.typing-wrap.on{display:flex;align-items:center;gap:8px}.t-dots{display:flex;gap:4px}.t-dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:tdot 1.2s ease-in-out infinite}.t-dot:nth-child(2){animation-delay:.15s}.t-dot:nth-child(3){animation-delay:.3s}@keyframes tdot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-4px)}}
+    .suggestions{display:flex;gap:8px;padding:0 12px 10px;overflow-x:auto;scrollbar-width:none}.suggestions::-webkit-scrollbar{display:none}.sugg-btn{flex:0 0 auto;border:1px solid var(--line2);border-radius:999px;background:var(--surf2);padding:8px 13px;font-size:13px;white-space:nowrap}.composer{display:flex;align-items:flex-end;gap:8px;padding:10px 12px;border-top:1px solid var(--line2);background:rgba(0,0,0,.1)}.composer-ta{flex:1;min-width:0;border:1px solid var(--line2);border-radius:var(--r2);background:rgba(0,0,0,.28);color:var(--text);padding:12px 14px;outline:0;resize:none;max-height:140px;min-height:46px;line-height:1.5;font-size:14.5px;overflow-y:auto}.composer-ta:focus{border-color:rgba(46,255,112,.45)}.composer-ta::placeholder{color:var(--muted)}.mic-btn{flex:0 0 44px;width:44px;height:44px;border:1px solid rgba(92,184,255,.22);border-radius:14px;background:rgba(92,184,255,.09);font-size:19px;display:grid;place-items:center}.mic-btn.recording{background:rgba(255,77,107,.2);border-color:rgba(255,77,107,.5);animation:mic .8s ease-in-out infinite}@keyframes mic{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}.send-btn{flex:0 0 auto;height:44px;padding:0 18px;background:linear-gradient(135deg,var(--green),#80ffb0);color:#041008;border-radius:14px;font-weight:700;font-size:14px;box-shadow:0 8px 24px rgba(46,255,112,.2)}.send-btn:disabled{opacity:.5;cursor:wait;box-shadow:none}
+    .sidebar{padding:15px;overflow-y:auto}.sblock{background:var(--surf2);border:1px solid var(--line2);border-radius:20px;padding:14px;margin-bottom:12px}.fstack{display:grid;gap:8px}.txt-in,select.txt-in{width:100%;border:1px solid var(--line2);border-radius:13px;background:rgba(0,0,0,.3);color:var(--text);padding:11px 13px;font-size:13px;outline:0}.txt-in:focus{border-color:rgba(46,255,112,.45)}.hint{font-size:12px;color:var(--muted);line-height:1.55;margin:8px 0 0}.act-grid,.big-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.act-btn,.big-card{display:flex;align-items:flex-start;gap:10px;text-align:left;background:var(--surf2);border:1px solid var(--line2);border-radius:16px;padding:11px 10px;font-size:13px;min-height:58px;transition:.15s}.big-card{padding:16px;border-radius:22px;background:linear-gradient(145deg,rgba(255,255,255,.065),rgba(255,255,255,.03))}.act-btn:hover,.big-card:hover,.mdl-btn:hover,.tmpl-btn:hover{border-color:var(--line);background:rgba(46,255,112,.07)}.ico{font-size:22px;flex:0 0 auto}.big-card .ico{font-size:26px}.act-btn strong,.big-card strong{display:block;font-size:14px}.act-btn small,.mdl-btn small,.tmpl-btn small,.big-card p{display:block;color:var(--muted);font-size:12px;margin-top:3px;line-height:1.45}.mdl-list,.tmpls,.st-rows{display:grid;gap:8px}.mdl-btn,.tmpl-btn{display:flex;justify-content:space-between;align-items:center;background:var(--surf2);border:1px solid var(--line2);border-radius:14px;padding:10px 12px;text-align:left}.tmpl-btn{display:block;padding:13px 14px;border-radius:16px}.st-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 11px;border-radius:12px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.05)}.st-row .k{color:var(--muted);font-size:12px}.st-row .v{font-size:12px;text-align:right;overflow-wrap:anywhere}.sec-title{margin:18px 0 10px}.page-card{background:var(--surf2);border:1px solid var(--line2);border-radius:20px;padding:16px;margin-bottom:12px}.dashboard-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.metric{background:rgba(0,0,0,.18);border:1px solid var(--line2);border-radius:18px;padding:14px}.metric small{display:block;color:var(--muted);font-size:11px}.metric b{display:block;margin-top:6px;font-size:22px;font-family:'Chakra Petch',monospace}.toggle-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0}.toggle-row+.toggle-row{border-top:1px solid var(--line2)}.tgl-label strong{display:block;font-size:14px}.tgl-label p{margin:3px 0 0;color:var(--muted);font-size:12px;line-height:1.4}.switch{width:50px;height:28px;flex:0 0 50px;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid var(--line2);position:relative}.switch:after{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:#fff;transition:.2s}.switch.on{background:rgba(46,255,112,.25);border-color:rgba(46,255,112,.4)}.switch.on:after{transform:translateX(22px);background:var(--green)}.install-tip{display:none}.install-tip.show{display:block}
+    #toasts{position:fixed;bottom:calc(var(--tab-h) + var(--safe-b) + 12px);left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;align-items:center;gap:8px;width:min(420px,90vw);pointer-events:none}.toast{padding:11px 20px;background:rgba(16,28,20,.97);border:1px solid var(--line);border-radius:999px;font-size:13px;font-weight:500;backdrop-filter:blur(20px);box-shadow:0 8px 30px rgba(0,0,0,.45);animation:tin .25s ease,tout .25s ease 2.5s forwards}.toast.err{border-color:rgba(255,77,107,.45);color:#ffb3bc}.toast.ok{border-color:rgba(46,255,112,.45);color:#b0ffe0}@keyframes tin{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:none}}@keyframes tout{to{opacity:0;transform:translateY(-6px) scale(.96)}}
+    .tabbar{position:fixed;left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom));z-index:50;max-width:820px;margin:0 auto;display:flex;gap:6px;background:rgba(14,26,18,.94);border:1px solid var(--line);backdrop-filter:blur(22px);border-radius:24px;padding:7px;box-shadow:0 20px 60px rgba(0,0,0,.42)}.tabbar button{flex:1;padding:8px 2px;font-size:10px;font-weight:600;border-radius:17px;color:var(--muted);transition:.18s}.tabbar button.active{background:rgba(46,255,112,.12);color:var(--text);border:1px solid rgba(46,255,112,.22)}.tabbar button b{display:block;font-size:18px;line-height:1.2;margin-bottom:1px}
+    @media(min-width:901px){.app{padding-bottom:20px}.tabbar{display:none}.mobile-only{display:none!important}.view.desktop-stack{display:block}.page-wide{display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:14px}.actions-pg,.dashboard-pg,.repair-pg,.settings-pg{display:none!important}}
+    @media(max-width:900px){.app{padding:12px 12px calc(var(--tab-h) + var(--safe-b) + 14px)}.layout{display:block}.sidebar{display:none}.stats{grid-template-columns:repeat(2,1fr)}.chat-panel{height:calc(100vh - 258px);min-height:400px}.desktop-only{display:none!important}.msg{font-size:14px}.brand-text h1{font-size:23px}.dashboard-grid{grid-template-columns:1fr}.act-grid,.big-grid{grid-template-columns:1fr}}
+    @media(max-width:390px){.stat{padding:10px 11px}.brand-text h1{font-size:21px}.chat-panel{height:calc(100vh - 266px)}.tabbar button{font-size:9px}.tabbar button b{font-size:17px}}
+  </style>
 </head>
-<body class="safe-top">
+<body>
+<div class="app">
+  <div class="top">
+    <div class="hero">
+      <div class="brand"><div class="avatar" id="avatar">🤖</div><div class="brand-text"><h1>Martybot</h1><p id="subtitle">Osobní AI agent · single-page app</p></div></div>
+      <button class="status-pill warn" id="topStatus">Kontroluji…</button>
+    </div>
+    <div class="stats">
+      <div class="stat primary"><small>🔌 Backend</small><b id="statBackend">—</b></div>
+      <div class="stat"><small>🧠 Model</small><b id="statModel">—</b></div>
+      <div class="stat"><small>⚙️ Provider</small><b id="statProvider">—</b></div>
+      <div class="stat"><small>🤖 Auto</small><b id="statAuto">—</b></div>
+    </div>
+  </div>
 
-    <header class="p-4 flex justify-between items-center z-50">
-        <div class="flex items-center gap-2">
-            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_#3dff7a]"></div>
-            <span class="text-[10px] tracking-[0.2em] opacity-50 uppercase" id="current-page-title">Chat</span>
-        </div>
-        <img src="icon.svg" class="w-6 h-6 opacity-80" alt="logo">
-    </header>
+  <div id="view-chat" class="view active desktop-stack">
+    <div class="layout">
+      <section class="panel chat-panel">
+        <div class="panel-head"><h2>Chat</h2><div class="head-btns"><button class="ghost-btn" id="refreshBtn">Stav</button><button class="ghost-btn" id="clearBtn">Smazat</button></div></div>
+        <div class="messages" id="messages"><div class="msg-wrap sys"><div class="msg">Všechno je sloučené v jednom index.html. Nastav backend v Nastavení a zkus /status.</div></div></div>
+        <div class="typing-wrap" id="typing"><span>Martybot píše</span><div class="t-dots"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div></div>
+        <div class="suggestions"><button class="sugg-btn" data-cmd="/status">📡 Stav</button><button class="sugg-btn" data-cmd="/facts">🧠 Paměť</button><button class="sugg-btn" data-fill="/remember ">📝 Poznámka</button><button class="sugg-btn" data-cmd="/model openrouter free">🆓 Free model</button><button class="sugg-btn" data-cmd="/auto run">🤖 Auto audit</button><button class="sugg-btn" data-cmd="/git">🧩 Git</button><button class="sugg-btn" data-cmd="/help">❓ Help</button></div>
+        <div class="composer"><textarea class="composer-ta" id="textInput" rows="1" placeholder="Napiš zprávu nebo příkaz…"></textarea><button class="mic-btn" id="micBtn" title="Diktovat">🎙️</button><button class="send-btn" id="sendBtn">Poslat</button></div>
+      </section>
+      <aside class="panel sidebar desktop-only">
+        <div class="sblock"><h2>Spojení</h2><div class="fstack"><input class="txt-in" id="backendInput" placeholder="https://tvoje-railway.up.railway.app"><input class="txt-in" id="tokenInput" type="password" placeholder="WEB_API_TOKEN volitelně"><select class="txt-in" id="modeInput"><option value="auto">Auto: Railway → Proxy</option><option value="direct">Pouze Railway URL</option><option value="proxy">Pouze Vercel proxy</option></select><button class="primary-btn" id="saveSettings">Uložit spojení</button></div><p class="hint">Když Railway URL selže kvůli CORS, režim Auto zkusí Vercel proxy.</p></div>
+        <div class="sblock"><h2>Rychlé akce</h2><div class="act-grid" id="desktopActions"></div></div>
+        <div class="sblock"><h2>Modely</h2><div class="mdl-list" id="desktopModels"></div></div>
+        <div class="sblock"><h2>Detail spojení</h2><div class="st-rows" id="statusList"></div></div>
+      </aside>
+    </div>
+  </div>
 
-    <main class="flex-1 relative px-4 overflow-hidden">
-        
-        <section id="chat" class="page-section active no-scrollbar">
-            <div class="space-y-4 pt-2" id="chat-messages">
-                <div class="glass p-4 rounded-2xl border-none bg-white/5">
-                    <p class="text-xs opacity-40 mb-1">SYSTEM</p>
-                    <p class="text-sm">Vítej v rozhraní Martybot. Jsem připraven k akci.</p>
-                </div>
-            </div>
-            
-            <div class="fixed bottom-24 left-4 right-4 z-40">
-                <div class="glass p-2 rounded-2xl flex items-center gap-2 border-green-500/30">
-                    <input type="text" placeholder="Zadej příkaz..." class="bg-transparent flex-1 p-3 outline-none text-sm">
-                    <button class="bg-[#3dff7a] text-black p-3 rounded-xl active:scale-90 transition">
-                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                    </button>
-                </div>
-            </div>
-        </section>
+  <div id="view-actions" class="view mobile-only actions-pg"><div class="big-grid" id="bigActions"></div><p class="sec-title">Šablony</p><div class="tmpls" id="templateList"></div></div>
 
-        <section id="dashboard" class="page-section no-scrollbar">
-            <div class="grid grid-cols-2 gap-4">
-                <div class="glass p-5 rounded-3xl">
-                    <p class="text-[10px] opacity-50 mb-2">CPU USAGE</p>
-                    <p class="text-2xl font-bold neon-text text-white">12%</p>
-                </div>
-                <div class="glass p-5 rounded-3xl">
-                    <p class="text-[10px] opacity-50 mb-2">RAM</p>
-                    <p class="text-2xl font-bold text-white text-white">0.4GB</p>
-                </div>
-                <div class="glass p-5 rounded-3xl col-span-2">
-                    <p class="text-[10px] opacity-50 mb-2">RAILWAY STATUS</p>
-                    <div class="flex justify-between items-end">
-                        <p class="text-lg text-white">Operational</p>
-                        <p class="text-[10px] text-green-400">99.9% Uptime</p>
-                    </div>
-                </div>
-            </div>
-        </section>
+  <div id="view-dashboard" class="view mobile-only dashboard-pg">
+    <div class="page-card"><p class="sec-title" style="margin-top:0">Dashboard</p><div class="dashboard-grid"><div class="metric"><small>Režim spojení</small><b id="dashMode">—</b></div><div class="metric"><small>Nástroje</small><b id="dashTools">—</b></div><div class="metric"><small>Paměť</small><b id="dashMemory">—</b></div><div class="metric"><small>Poslední test</small><b id="dashLast">—</b></div></div></div>
+    <div class="page-card"><p class="sec-title" style="margin-top:0">Detail spojení</p><div class="st-rows" id="statusListDashboard"></div></div>
+  </div>
 
-        <section id="repair" class="page-section no-scrollbar">
-            <div class="glass p-6 rounded-3xl space-y-6">
-                <h2 class="text-lg font-bold mb-4">Auto-Repair Modul</h2>
-                <div class="space-y-4">
-                    <button class="w-full glass p-4 rounded-xl text-left flex items-center justify-between border-blue-500/20">
-                        <span>Diagnostika kódu</span>
-                        <span class="text-[10px] bg-blue-500/20 px-2 py-1 rounded">START</span>
-                    </button>
-                    <button class="w-full glass p-4 rounded-xl text-left flex items-center justify-between border-yellow-500/20">
-                        <span>Fix dependencies</span>
-                        <span class="text-[10px] bg-yellow-500/20 px-2 py-1 rounded">RUN</span>
-                    </button>
-                    <button class="w-full glass p-4 rounded-xl text-left flex items-center justify-between border-red-500/20">
-                        <span>Clear Cache</span>
-                        <span class="text-[10px] bg-red-500/20 px-2 py-1 rounded">WIPE</span>
-                    </button>
-                </div>
-            </div>
-        </section>
+  <div id="view-repair" class="view mobile-only repair-pg">
+    <div class="page-card"><p class="sec-title" style="margin-top:0">Servis / Diagnostika</p><div class="fstack"><button class="primary-btn" data-cmd="/status">Spustit /status</button><button class="ghost-btn" id="diagAutoBtn" style="padding:11px">Diagnostika Auto</button><button class="ghost-btn" id="diagProxyBtn" style="padding:11px">Test Vercel proxy</button><button class="ghost-btn" id="diagDirectBtn" style="padding:11px">Test Railway direct</button><button class="ghost-btn" data-cmd="/git setup" style="padding:11px">Git setup</button><button class="ghost-btn" data-cmd="/auto run" style="padding:11px">Auto audit</button></div><p class="hint">Diagnostika otestuje spojení a vypíše chybu rovnou do chatu.</p></div>
+    <div class="page-card"><p class="sec-title" style="margin-top:0">Rychlá oprava</p><div class="fstack"><button class="ghost-btn" id="useProxyBtn" style="padding:11px">Použít jen Vercel proxy</button><button class="ghost-btn" id="useAutoBtn" style="padding:11px">Vrátit režim Auto</button></div></div>
+  </div>
 
-        <section id="settings" class="page-section no-scrollbar">
-            <div class="space-y-4">
-                <div class="glass p-5 rounded-3xl">
-                    <label class="text-[10px] opacity-50 block mb-2 uppercase">Railway Backend URL</label>
-                    <input type="text" value="https://agent-production.up.railway.app" class="w-full bg-white/5 border border-white/10 p-3 rounded-xl text-xs outline-none focus:border-green-500/50">
-                </div>
-                <div class="glass p-5 rounded-3xl">
-                    <label class="text-[10px] opacity-50 block mb-2 uppercase">Vercel Proxy</label>
-                    <div class="flex items-center justify-between">
-                        <span class="text-sm">Aktivovat proxy režim</span>
-                        <div class="w-10 h-5 bg-green-500/20 rounded-full relative">
-                            <div class="absolute right-1 top-1 w-3 h-3 bg-green-500 rounded-full"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="p-4 text-center opacity-20 text-[10px]">
-                    MARTYBOT v2.0.4 | GitHub: Martyparty1988
-                </div>
-            </div>
-        </section>
-
-    </main>
-
-    <nav class="glass border-t border-white/5 pb-8 pt-3 px-6 flex justify-between items-center safe-bottom">
-        <button onclick="showSection('chat', this)" class="nav-item active flex flex-col items-center gap-1 transition-all">
-            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-            <span class="text-[9px] font-bold uppercase">Chat</span>
-        </button>
-        
-        <button onclick="showSection('dashboard', this)" class="nav-item flex flex-col items-center gap-1 transition-all">
-            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-            <span class="text-[9px] font-bold uppercase">Stats</span>
-        </button>
-        
-        <button onclick="showSection('repair', this)" class="nav-item flex flex-col items-center gap-1 transition-all">
-            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-            <span class="text-[9px] font-bold uppercase">Servis</span>
-        </button>
-        
-        <button onclick="showSection('settings', this)" class="nav-item flex flex-col items-center gap-1 transition-all">
-            <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            <span class="text-[9px] font-bold uppercase">Nastav.</span>
-        </button>
-    </nav>
-
-    <script>
-        // SPA Přepínání sekcí
-        function showSection(sectionId, element) {
-            // Skrýt všechny sekce
-            document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
-            
-            // Aktivovat vybranou sekci
-            document.getElementById(sectionId).classList.add('active');
-            
-            // Update navigace
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            element.classList.add('active');
-            
-            // Update titulku v headeru
-            const titleMap = {
-                'chat': 'Martybot Chat',
-                'dashboard': 'System Dashboard',
-                'repair': 'Repair & Diagnostics',
-                'settings': 'System Settings'
-            };
-            document.getElementById('current-page-title').innerText = titleMap[sectionId];
-            
-            // Haptic vibra (pokud podporováno)
-            if (window.navigator.vibrate) window.navigator.vibrate(10);
-        }
-
-        // PWA Service Worker Registrace
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW failed', err));
-            });
-        }
-    </script>
+  <div id="view-settings" class="view mobile-only settings-pg">
+    <div class="page-card"><p class="sec-title" style="margin-top:0">Backend</p><div class="fstack"><input class="txt-in" id="backendInputMobile" placeholder="https://tvoje-railway.up.railway.app"><input class="txt-in" id="tokenInputMobile" type="password" placeholder="WEB_API_TOKEN volitelně"><select class="txt-in" id="modeInputMobile"><option value="auto">Auto: Railway → Proxy</option><option value="direct">Pouze Railway URL</option><option value="proxy">Pouze Vercel proxy</option></select><button class="primary-btn" id="saveSettingsMobile">Uložit a test</button><button class="ghost-btn" id="testMobileBtn" style="text-align:center;padding:11px">Test spojení</button></div><p class="hint">Railway URL → Settings → Networking → Public Domain. Token i nastavení jsou jen lokálně v prohlížeči.</p></div>
+    <div class="page-card install-tip" id="installTip"><p class="sec-title" style="margin-top:0">📲 Přidat na plochu</p><p class="hint">V Safari klepni na Sdílet → Přidat na plochu. Martybot se otevře jako appka.</p></div>
+    <div class="page-card"><p class="sec-title" style="margin-top:0">Modely</p><div class="mdl-list" id="mobileModels"></div></div>
+    <div class="page-card"><p class="sec-title" style="margin-top:0">Detail spojení</p><div class="st-rows" id="statusListMobile"></div></div>
+    <div class="page-card"><p class="sec-title" style="margin-top:0">UI nastavení</p><div class="toggle-row"><div class="tgl-label"><strong>Vibrace tlačítek</strong><p>Krátká haptická odezva na mobilu.</p></div><button class="switch" id="hapticSwitch"></button></div><div class="toggle-row"><div class="tgl-label"><strong>Ukládat chat</strong><p>Jen lokálně v prohlížeči.</p></div><button class="switch" id="saveChatSwitch"></button></div></div>
+  </div>
+</div>
+<div id="toasts"></div>
+<nav class="tabbar"><button class="active" data-tab="chat"><b>💬</b>Chat</button><button data-tab="actions"><b>⚡</b>Akce</button><button data-tab="dashboard"><b>📊</b>Dash</button><button data-tab="repair"><b>🛠️</b>Servis</button><button data-tab="settings"><b>⚙️</b>Nast.</button></nav>
+<script>
+const $=id=>document.getElementById(id);
+let backendUrl=localStorage.getItem('martybotBackendUrl')||'';
+let token=localStorage.getItem('martybotWebToken')||'';
+let apiMode=localStorage.getItem('martybotMode')||'auto';
+let haptics=localStorage.getItem('martybotHaptics')!=='false';
+let saveChat=localStorage.getItem('martybotSaveChat')!=='false';
+let lastStatus=null,lastStatusMode='—',lastTest='—';
+const userId='web_user';
+const esc=s=>String(s??'').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+const now=()=>new Date().toLocaleTimeString('cs-CZ',{hour:'2-digit',minute:'2-digit'});
+const tap=()=>{if(haptics&&navigator.vibrate)navigator.vibrate(8)};
+function toast(msg,type=''){const el=document.createElement('div');el.className='toast'+(type?' '+type:'');el.textContent=msg;$('toasts').appendChild(el);setTimeout(()=>el.remove(),3200)}
+function md(raw){let t=esc(raw);t=t.replace(/```[\w-]*\n?([\s\S]*?)```/g,(_,c)=>'<pre><code>'+c.trim()+'</code></pre>');t=t.replace(/`([^`\n]+)`/g,'<code>$1</code>');t=t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');t=t.replace(/\*(.+?)\*/g,'<em>$1</em>');t=t.replace(/^#{1,3} (.+)$/gm,'<h3>$1</h3>');t=t.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');t=t.replace(/(?:^[-•*] .+(?:\n|$))+/gm,block=>'<ul>'+block.trim().split('\n').map(line=>'<li>'+line.replace(/^[-•*] /,'')+'</li>').join('')+'</ul>');t=t.replace(/\[(.+?)\]\((.+?)\)/g,(_,label,url)=>/^(https?:\/\/|mailto:|tel:)/i.test(url)?`<a href="${url}" target="_blank" rel="noopener">${label}</a>`:label);t=t.replace(/^---$/gm,'<hr>');return t.replace(/\n\n+/g,'<br><br>').replace(/\n/g,'<br>')}
+function addMessage(text,type='bot'){const wrap=document.createElement('div');wrap.className='msg-wrap '+type;const msgEl=document.createElement('div');msgEl.className='msg';msgEl[type==='bot'?'innerHTML':'textContent']=type==='bot'?md(text):text;wrap.appendChild(msgEl);if(type!=='sys'){const tm=document.createElement('div');tm.className='msg-time';tm.textContent=now();wrap.appendChild(tm)}$('messages').appendChild(wrap);$('messages').scrollTop=$('messages').scrollHeight;if(saveChat)try{localStorage.setItem('martybotLastChat',$('messages').innerHTML)}catch{}}
+function base(){return backendUrl.trim().replace(/\/$/,'')}
+function modeCandidates(pref=apiMode){if(pref==='proxy')return['proxy'];if(pref==='direct')return['direct'];return base()?['direct','proxy']:['proxy']}
+function urlFor(path,mode){return mode==='direct'&&base()?base()+path:path}
+function authHdr(json=false){const h={};if(json)h['Content-Type']='application/json';if(token)h.Authorization='Bearer '+token;return h}
+function niceErr(e,mode){let x=String(e.message||e);if(x.toLowerCase().includes('failed to fetch')||x.toLowerCase().includes('load failed'))x='Load failed — špatná URL, CORS, nebo backend neběží.';return (mode==='direct'?'Railway direct':'Vercel proxy')+': '+x}
+async function apiFetch(path,opt={},pref=apiMode){const errors=[];for(const m of modeCandidates(pref)){if(m==='direct'&&!base())continue;try{const r=await fetch(urlFor(path,m),{...opt,headers:{...(opt.headers||{}),...authHdr(!!opt.body)}});const txt=await r.text();let data={};try{data=txt?JSON.parse(txt):{}}catch{data={error:txt||'Neplatná odpověď'}}if(!r.ok)throw new Error(data.error||`HTTP ${r.status}`);lastStatusMode=m;localStorage.setItem('martybotMode',m);apiMode=m;return{data,mode:m}}catch(e){errors.push(niceErr(e,m))}}throw new Error(errors.join('\n'))}
+function val(v){if(v===true)return'<span class="ok">ano</span>';if(v===false)return'<span class="bad">ne</span>';if(v==null||v==='')return'<span class="warn">—</span>';return esc(v)}
+function mini(id,text,cls=''){const el=$(id);if(!el)return;el.textContent=text||'—';el.className=cls}
+function setOnline(on){$('avatar').classList.toggle('online',!!on);$('topStatus').textContent=on?'● Online':'○ Offline';$('topStatus').className='status-pill '+(on?'ok':'bad')}
+function statusRows(d){return[['Režim',lastStatusMode],['Telegram',d.telegram],['WhatsApp',d.whatsapp],['Email',d.email],['Auto',d.auto],['Git',d.gitWorkdir],['Paměť',d.memoryDir||d.memoryBackend],['Supabase',d.memorySupabaseDisabledReason],['Token API',d.webApiToken],['Bash tools',d.bashTools],['Write tools',d.writeTools],['Origins',Array.isArray(d.allowedOrigins)?d.allowedOrigins.join(', '):d.allowedOrigins]].map(([k,v])=>`<div class="st-row"><span class="k">${k}</span><span class="v">${val(v)}</span></div>`).join('')}
+function renderStatus(d){lastStatus=d;setOnline(!!d.ok);$('subtitle').textContent=d.ok?`Agent běží · ${d.provider||'provider'}`:'Čekám na backend';mini('statBackend',lastStatusMode==='direct'&&base()?new URL(base()).host:'Vercel proxy');mini('statModel',d.model||'—');mini('statProvider',d.provider||'—');mini('statAuto',d.auto?'Zapnuto':'Vypnuto',d.auto?'ok':'warn');const html=statusRows(d);['statusList','statusListMobile','statusListDashboard'].forEach(id=>{const el=$(id);if(el)el.innerHTML=html});renderDashboard()}
+function renderDashboard(){mini('dashMode',lastStatusMode);mini('dashTools',lastStatus?`${lastStatus.bashTools?'Bash':'—'} ${lastStatus.writeTools?'Write':'—'}`:'—');mini('dashMemory',lastStatus?(lastStatus.memoryDir||lastStatus.memoryBackend||'—'):'—');mini('dashLast',lastTest)}
+async function loadStatus(showErrors=false,pref=apiMode){try{$('topStatus').textContent='● Kontroluji…';$('topStatus').className='status-pill warn';const {data,mode}=await apiFetch('/api/status',{},pref);lastStatusMode=mode;lastTest=now();renderStatus(data);return true}catch(e){setOnline(false);lastTest=now();const err=`<div class="st-row"><span class="k">Chyba</span><span class="v bad">${val(e.message).replace(/\n/g,'<br>')}</span></div>`;['statusList','statusListMobile','statusListDashboard'].forEach(id=>{const el=$(id);if(el)el.innerHTML=err});renderDashboard();if(showErrors)addMessage('Diagnostika spojení:\n'+e.message,'sys');return false}}
+async function send(text){tap();addMessage(text,'me');$('sendBtn').disabled=true;$('typing').classList.add('on');try{const {data}=await apiFetch('/api/chat',{method:'POST',body:JSON.stringify({text,userId})});(data.replies?.length?data.replies:['Bez odpovědi.']).forEach(x=>addMessage(x,'bot'));showTab('chat')}catch(e){addMessage('Chyba: '+e.message+'\n\nTip: Forbidden = nastav ALLOWED_WEB_USER_IDS=web_user nebo použij WEB_API_TOKEN. Load failed = CORS/špatná URL/backend neběží.','sys');showTab('chat')}finally{$('typing').classList.remove('on');$('sendBtn').disabled=false;$('textInput').focus();loadStatus(false)}}
+function showTab(name){document.querySelectorAll('.tabbar button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));const v=$('view-'+name);if(v)v.classList.add('active');if(name==='chat')setTimeout(()=>{$('messages').scrollTop=$('messages').scrollHeight},60);tap()}
+function initInputs(){['backendInput','backendInputMobile'].forEach(id=>{const el=$(id);if(el)el.value=backendUrl});['tokenInput','tokenInputMobile'].forEach(id=>{const el=$(id);if(el)el.value=token});['modeInput','modeInputMobile'].forEach(id=>{const el=$(id);if(el)el.value=apiMode})}
+function saveConnection(mobile=false){backendUrl=(mobile?$('backendInputMobile'):$('backendInput')).value.trim();token=(mobile?$('tokenInputMobile'):$('tokenInput')).value.trim();apiMode=(mobile?$('modeInputMobile'):$('modeInput')).value;localStorage.setItem('martybotBackendUrl',backendUrl);localStorage.setItem('martybotWebToken',token);localStorage.setItem('martybotMode',apiMode);initInputs();toast('Spojení uloženo','ok');loadStatus(true)}
+function fill(text){tap();$('textInput').value=text;autoGrow();showTab('chat');setTimeout(()=>$('textInput').focus(),80)}
+function autoGrow(){const el=$('textInput');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,140)+'px'}
+const ACTIONS=[['📡','Stav','backend a model','/status'],['🧠','Paměť','uložené poznámky','/facts'],['🤖','Auto','autonomní status','/auto status'],['🔎','Auto audit','jednorázová kontrola','/auto run'],['🧩','Git','workspace status','/git'],['🔧','Git setup','opravit workspace','/git setup'],['⬇️','Git pull','srovnat s GitHubem','/git pull'],['📦','Záloha','export paměti','/backup'],['🧬','Improve','self-improve cyklus','/improve'],['❓','Help','seznam příkazů','/help']];
+const MODELS=[['Free router','doporučeno','/model openrouter free'],['Qwen coder','lepší na kód','/model openrouter qwen'],['Llama free','rychlý text','/model openrouter llama'],['DeepSeek','reasoning','/model openrouter deepseek'],['Seznam modelů','všechny','/model']];
+const TEMPLATES=[['➕ Přidat poznámku','Uloží fakt do paměti','/remember '],['📚 Naučit z URL','Načte veřejnou stránku','/learn https://'],['☀️ Solární report','Report práce','Napiš mi solární report: projekt, datum, hotové stoly/stringy, lidi, problémy, další kroky.'],['🧾 Denní souhrn','Krátký report pro tým','Vytvoř mi stručný denní souhrn práce pro tým.'],['🐞 Debug chyba','Pomoc s logem','Analyzuj tuto chybu a napiš mi přesné kroky opravy:\n'],['✉️ Email','SMTP šablona','/email komu@example.com | Předmět | Text zprávy']];
+function renderLists(){const q=s=>esc(s).replace(/"/g,'&quot;');const aHtml=ACTIONS.slice(0,6).map(a=>`<button class="act-btn" data-cmd="${q(a[3])}"><span class="ico">${a[0]}</span><span><strong>${a[1]}</strong><small>${a[2]}</small></span></button>`).join('');const da=$('desktopActions');if(da)da.innerHTML=aHtml;const big=$('bigActions');if(big)big.innerHTML=ACTIONS.map(a=>`<button class="big-card" data-cmd="${q(a[3])}"><span class="ico">${a[0]}</span><span><strong>${a[1]}</strong><p>${a[2]}</p></span></button>`).join('');const mHtml=MODELS.map(m=>`<button class="mdl-btn" data-cmd="${q(m[2])}"><span>${m[0]}</span><small>${m[1]}</small></button>`).join('');['desktopModels','mobileModels'].forEach(id=>{const el=$(id);if(el)el.innerHTML=mHtml});const tl=$('templateList');if(tl)tl.innerHTML=TEMPLATES.map(t=>`<button class="tmpl-btn" data-fill="${q(t[2])}"><strong>${t[0]}</strong><small>${t[1]}</small></button>`).join('')}
+function updateSwitches(){$('hapticSwitch').classList.toggle('on',haptics);$('saveChatSwitch').classList.toggle('on',saveChat)}
+$('textInput').addEventListener('input',autoGrow);$('textInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();const t=$('textInput').value.trim();if(t){$('textInput').value='';autoGrow();send(t)}}});$('sendBtn').onclick=()=>{const t=$('textInput').value.trim();if(t){$('textInput').value='';autoGrow();send(t)}};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-cmd],[data-fill]');if(!b)return;if(b.dataset.cmd)send(b.dataset.cmd);if(b.dataset.fill)fill(b.dataset.fill)});
+document.querySelectorAll('.tabbar button').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+$('saveSettings').onclick=()=>saveConnection(false);$('saveSettingsMobile').onclick=()=>saveConnection(true);$('refreshBtn').onclick=()=>loadStatus(true);$('testMobileBtn').onclick=()=>loadStatus(true);$('topStatus').onclick=()=>loadStatus(true);$('clearBtn').onclick=()=>{$('messages').innerHTML='<div class="msg-wrap sys"><div class="msg">Chat vyčištěn. Paměť agenta zůstává.</div></div>';localStorage.removeItem('martybotLastChat');toast('Chat vyčištěn')};
+$('diagAutoBtn').onclick=()=>{showTab('chat');loadStatus(true,'auto')};$('diagProxyBtn').onclick=()=>{showTab('chat');loadStatus(true,'proxy')};$('diagDirectBtn').onclick=()=>{showTab('chat');loadStatus(true,'direct')};$('useProxyBtn').onclick=()=>{apiMode='proxy';localStorage.setItem('martybotMode','proxy');initInputs();toast('Režim proxy nastaven','ok');loadStatus(true,'proxy')};$('useAutoBtn').onclick=()=>{apiMode='auto';localStorage.setItem('martybotMode','auto');initInputs();toast('Režim Auto nastaven','ok');loadStatus(true,'auto')};
+$('hapticSwitch').onclick=()=>{haptics=!haptics;localStorage.setItem('martybotHaptics',haptics);updateSwitches();tap()};$('saveChatSwitch').onclick=()=>{saveChat=!saveChat;localStorage.setItem('martybotSaveChat',saveChat);updateSwitches();if(!saveChat)localStorage.removeItem('martybotLastChat')};
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('micBtn').style.display='none'}else{let rec=null;$('micBtn').onclick=()=>{tap();if(rec){rec.stop();return}rec=new SR();rec.lang='cs-CZ';rec.interimResults=false;$('micBtn').classList.add('recording');rec.onresult=e=>{$('textInput').value=($('textInput').value+' '+e.results[0][0].transcript).trim();autoGrow();$('textInput').focus()};rec.onerror=()=>toast('Diktování selhalo. Zkus Safari.','err');rec.onend=()=>{$('micBtn').classList.remove('recording');rec=null};rec.start()}}
+if(/iphone|ipad|ipod/i.test(navigator.userAgent)&&!window.navigator.standalone)$('installTip').classList.add('show');
+initInputs();renderLists();updateSwitches();renderDashboard();try{const saved=localStorage.getItem('martybotLastChat');if(saved&&saveChat)$('messages').innerHTML=saved}catch{}
+loadStatus(false);setInterval(()=>loadStatus(false),30000);
+</script>
 </body>
 </html>
