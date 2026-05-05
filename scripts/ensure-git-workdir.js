@@ -1,6 +1,7 @@
 // scripts/ensure-git-workdir.js
 // Prepares a real git working directory for Martybot self-improve on Railway.
 // Secrets stay in Railway Variables. This file never stores tokens.
+// Important: Git setup must never prevent Telegram/Web backend from starting unless REQUIRE_GIT_WORKDIR=true.
 
 const { execFile } = require('child_process');
 const fs = require('fs').promises;
@@ -13,9 +14,48 @@ const repo = process.env.GITHUB_REPO || 'Martyparty1988/openclaw-agent-v2';
 const branch = process.env.GIT_BRANCH || 'main';
 const workdir = path.resolve(process.env.AGENT_WORKDIR || '/data/openclaw-agent-v2');
 const enabled = String(process.env.GIT_AUTO_SETUP || 'false').toLowerCase() === 'true';
+const required = String(process.env.REQUIRE_GIT_WORKDIR || 'false').toLowerCase() === 'true';
 
 function log(message) {
   console.log(`[git-setup] ${message}`);
+}
+
+function warn(message) {
+  console.warn(`[git-setup] ${message}`);
+}
+
+function sanitize(text = '') {
+  return String(text)
+    .replace(/github_pat_[A-Za-z0-9_]+/g, 'github_pat_***')
+    .replace(/ghp_[A-Za-z0-9_]+/g, 'ghp_***')
+    .replace(/x-access-token:[^@\s]+@/g, 'x-access-token:***@')
+    .trim();
+}
+
+function explainGitFailure(err) {
+  const raw = sanitize([err?.message, err?.stderr, err?.stdout].filter(Boolean).join('\n'));
+  const lower = raw.toLowerCase();
+
+  if (lower.includes('write access to repository not granted') || lower.includes('403') || lower.includes('invalid username or token') || lower.includes('authentication failed')) {
+    return [
+      'GitHub odmítl GIT_TOKEN nebo token nemá práva k repozitáři.',
+      'Bot se spustí dál bez git self-improve workspace.',
+      'Oprava pro Git funkce: v Railway nastav nový GIT_TOKEN s přístupem k Martyparty1988/openclaw-agent-v2 a oprávněním Contents: Read and write.',
+      'Token nech pouze v Railway Variables. Nikdy ho nedávej do GitHub URL, .env v repozitáři ani do chatu.',
+      raw,
+    ].filter(Boolean).join('\n');
+  }
+
+  if (lower.includes('could not read username') || lower.includes('terminal prompts disabled')) {
+    return [
+      'Git potřebuje přihlašovací údaje, ale Railway nemá interaktivní terminál.',
+      'Bot se spustí dál bez git self-improve workspace.',
+      'Oprava pro Git funkce: nastav GIT_TOKEN v Railway Variables.',
+      raw,
+    ].join('\n');
+  }
+
+  return raw || 'Neznámá Git chyba. Bot se spustí dál bez git workspace.';
 }
 
 async function exists(target) {
@@ -54,12 +94,16 @@ async function git(args, options = {}) {
     env.GIT_ASKPASS = await makeAskPass();
   }
 
-  return execFileAsync('git', args, {
-    env,
-    timeout: options.timeout || 120000,
-    cwd: options.cwd || process.cwd(),
-    maxBuffer: 1024 * 1024,
-  });
+  try {
+    return await execFileAsync('git', args, {
+      env,
+      timeout: options.timeout || 120000,
+      cwd: options.cwd || process.cwd(),
+      maxBuffer: 1024 * 1024,
+    });
+  } catch (err) {
+    throw new Error(explainGitFailure(err));
+  }
 }
 
 async function ensureWorkdir() {
@@ -98,6 +142,11 @@ async function ensureWorkdir() {
 }
 
 ensureWorkdir().catch((err) => {
-  console.error(`[git-setup] ${err.message}`);
-  process.exit(1);
+  warn(err.message);
+  if (required) {
+    warn('REQUIRE_GIT_WORKDIR=true, stopping startup.');
+    process.exit(1);
+  }
+  warn('Continuing startup without git workspace. Telegram/Web backend can still run.');
+  process.exit(0);
 });
