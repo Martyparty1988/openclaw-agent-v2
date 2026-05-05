@@ -1,5 +1,5 @@
 // sub-agents/memory.js
-// Per-user session memory + permanent knowledge base.
+// Per-user session memory + permanent knowledge base + user settings.
 // Default storage: JSON files.
 // Optional online storage: Supabase Postgres when SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are set.
 // Important: invalid Supabase config must never crash the bot at startup.
@@ -116,6 +116,9 @@ class Memory {
       userId: data.userId || data.user_id || userId,
       messages: Array.isArray(data.messages) ? data.messages : [],
       knowledge: Array.isArray(data.knowledge) ? data.knowledge : [],
+      settings: data.settings && typeof data.settings === 'object' && !Array.isArray(data.settings) ? data.settings : {},
+      jobs: Array.isArray(data.jobs) ? data.jobs : [],
+      audits: Array.isArray(data.audits) ? data.audits : [],
       createdAt: data.createdAt || data.created_at || new Date().toISOString(),
       updatedAt: data.updatedAt || data.updated_at,
     };
@@ -187,6 +190,14 @@ class Memory {
       normalized.knowledge = normalized.knowledge.slice(-MAX_KNOWLEDGE_ITEMS);
     }
 
+    if (normalized.audits.length > Number(process.env.MEMORY_MAX_AUDITS || 100)) {
+      normalized.audits = normalized.audits.slice(-Number(process.env.MEMORY_MAX_AUDITS || 100));
+    }
+
+    if (normalized.jobs.length > Number(process.env.MEMORY_MAX_JOBS || 200)) {
+      normalized.jobs = normalized.jobs.slice(-Number(process.env.MEMORY_MAX_JOBS || 200));
+    }
+
     return normalized;
   }
 
@@ -198,6 +209,43 @@ class Memory {
   async _save(userId, data) {
     if (isSupabaseEnabled()) return this._saveSupabase(userId, data);
     return this._saveJson(userId, data);
+  }
+
+  async getSetting(userId, key, fallback = null) {
+    const data = await this._load(userId);
+    return Object.prototype.hasOwnProperty.call(data.settings, key) ? data.settings[key] : fallback;
+  }
+
+  async setSetting(userId, key, value) {
+    const data = await this._load(userId);
+    data.settings = data.settings || {};
+    data.settings[key] = value;
+    await this._save(userId, data);
+    return value;
+  }
+
+  async getSettings(userId) {
+    const data = await this._load(userId);
+    return { ...(data.settings || {}) };
+  }
+
+  async addAudit(userId, audit, meta = {}) {
+    const data = await this._load(userId);
+    const item = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      content: String(audit || '').slice(0, Number(process.env.AUDIT_ITEM_MAX_CHARS || 20000)),
+      source: meta.source || 'auto-worker',
+      title: meta.title || 'Auto audit',
+      createdAt: new Date().toISOString(),
+    };
+    data.audits.push(item);
+    await this._save(userId, data);
+    return item;
+  }
+
+  async listAudits(userId, limit = 10) {
+    const data = await this._load(userId);
+    return data.audits.slice(-limit).reverse();
   }
 
   async add(userId, role, content) {
@@ -290,7 +338,7 @@ class Memory {
     const data = await this.exportData(userId);
     return JSON.stringify({
       type: 'openclaw-memory-backup',
-      version: 2,
+      version: 3,
       backend: isSupabaseEnabled() ? 'supabase' : 'json',
       exportedAt: new Date().toISOString(),
       data,
@@ -318,6 +366,9 @@ class Memory {
       userId,
       messages: [...current.messages, ...normalizedIncoming.messages],
       knowledge: [...current.knowledge, ...normalizedIncoming.knowledge],
+      settings: { ...(current.settings || {}), ...(normalizedIncoming.settings || {}) },
+      jobs: [...(current.jobs || []), ...(normalizedIncoming.jobs || [])],
+      audits: [...(current.audits || []), ...(normalizedIncoming.audits || [])],
       createdAt: current.createdAt || normalizedIncoming.createdAt,
     }, userId);
 
@@ -331,6 +382,9 @@ class Memory {
     return {
       messages: data.messages.length,
       knowledge: data.knowledge.length,
+      settings: Object.keys(data.settings || {}).length,
+      audits: data.audits.length,
+      jobs: data.jobs.length,
       backend: status.backend,
       memoryDir: MEMORY_DIR,
       supabaseTable: SUPABASE_TABLE,
