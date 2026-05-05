@@ -1,6 +1,6 @@
 {
   "name": "openclaw-agent-railway-main-wrapper",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "description": "Railway compatibility wrapper when Root Directory is accidentally set to main.",
   "engines": {
@@ -8,8 +8,8 @@
   },
   "scripts": {
     "postinstall": "node prepare-main.js",
-    "start": "NODE_PATH=./node_modules node scripts/ensure-git-workdir.js && NODE_PATH=./node_modules node router.js",
-    "check": "NODE_PATH=./node_modules node --check router.js && NODE_PATH=./node_modules node --check meta-agent.js && NODE_PATH=./node_modules node --check sub-agents/memory.js"
+    "start": "NODE_PATH=./node_modules node scripts/ensure-git-workdir.js && NODE_PATH=./node_modules node router-v2.js",
+    "check": "NODE_PATH=./node_modules node --check router-v2.js && NODE_PATH=./node_modules node --check meta-agent-v2.js && NODE_PATH=./node_modules node --check sub-agents/memory.js && NODE_PATH=./node_modules node --check sub-agents/auto-worker.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
