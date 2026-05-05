@@ -18,11 +18,54 @@ if (typeof meta.setAutoWorker === 'function') {
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
 
+class LRUCache {
+  constructor(maxSize = 10000) {
+    this.maxSize = maxSize;
+    this.cache = new Map();
+  }
+
+  get(key) {
+    if (this.cache.has(key)) {
+      // Move to end (most recently used)
+      const value = this.cache.get(key);
+      this.cache.delete(key);
+      this.cache.set(key, value);
+      return value;
+    }
+    return undefined;
+  }
+
+  set(key, value) {
+    if (this.cache.has(key)) {
+      // Update existing key
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      // Remove least recently used (first item)
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, value);
+  }
+
+  delete(key) {
+    return this.cache.delete(key);
+  }
+
+  entries() {
+    return this.cache.entries();
+  }
+
+  size() {
+    return this.cache.size;
+  }
+}
+
 class RateLimiter {
-  constructor(windowMs = 60000, maxRequests = 60) {
+  constructor(windowMs = 60000, maxRequests = 60, maxCacheSize = 10000) {
     this.windowMs = windowMs;
     this.maxRequests = maxRequests;
-    this.requests = new Map(); // key -> { count, resetTime }
+    this.maxCacheSize = maxCacheSize;
+    this.requests = new LRUCache(maxCacheSize); // key -> { count, resetTime }
   }
 
   isAllowed(key) {
@@ -54,26 +97,59 @@ class RateLimiter {
   cleanup() {
     try {
       const now = Date.now();
+      const toDelete = [];
+      
       for (const [key, record] of this.requests.entries()) {
         if (now > record.resetTime) {
-          this.requests.delete(key);
+          toDelete.push(key);
+        }
+      }
+      
+      for (const key of toDelete) {
+        this.requests.delete(key);
+      }
+      
+      // Additional safety check for cache size
+      if (this.requests.size() > this.maxCacheSize * 1.1) {
+        console.warn(`Rate limiter cache size exceeded limit: ${this.requests.size()}/${this.maxCacheSize}`);
+        // Force cleanup by recreating LRU cache with current valid entries
+        const validEntries = [];
+        for (const [key, record] of this.requests.entries()) {
+          if (now <= record.resetTime) {
+            validEntries.push([key, record]);
+          }
+        }
+        this.requests = new LRUCache(this.maxCacheSize);
+        for (const [key, record] of validEntries.slice(-this.maxCacheSize)) {
+          this.requests.set(key, record);
         }
       }
     } catch (err) {
       console.error('Rate limiter cleanup error:', err.message);
     }
   }
+
+  getStats() {
+    return {
+      size: this.requests.size(),
+      maxSize: this.maxCacheSize,
+      windowMs: this.windowMs,
+      maxRequests: this.maxRequests
+    };
+  }
 }
 
-// Create rate limiters with different limits
+// Create rate limiters with different limits and cache sizes
 const httpRateLimiter = new RateLimiter(
   Number(process.env.RATE_LIMIT_WINDOW_MS || 60000), // 1 minute
-  Number(process.env.RATE_LIMIT_MAX_REQUESTS || 30)  // 30 requests per minute
+  Number(process.env.RATE_LIMIT_MAX_REQUESTS || 30),  // 30 requests per minute
+  Number(process.env.RATE_LIMIT_CACHE_SIZE || 10000)  // Max 10k unique IPs
 );
 
 const chatRateLimiter = new RateLimiter(
   Number(process.env.CHAT_RATE_LIMIT_WINDOW_MS || 60000), // 1 minute
-  Number(process.env.CHAT_RATE_LIMIT_MAX_REQUESTS || 10)  // 10 chat requests per minute
+  Number(process.env.CHAT_RATE_LIMIT_MAX_REQUESTS || 10),  // 10 chat requests per minute
+  Number(process.env.CHAT_RATE_LIMIT_CACHE_SIZE || 5000)   // Max 5k unique chat users
 );
 
 // Track cleanup interval for graceful shutdown
@@ -85,6 +161,14 @@ function startCleanupInterval() {
     try {
       httpRateLimiter.cleanup();
       chatRateLimiter.cleanup();
+      
+      // Log stats periodically for monitoring
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Rate limiter stats:', {
+          http: httpRateLimiter.getStats(),
+          chat: chatRateLimiter.getStats()
+        });
+      }
     } catch (err) {
       console.error('Rate limiter cleanup error:', err.message);
     }
@@ -298,8 +382,10 @@ function publicStatus() {
     rateLimiting: {
       httpWindow: httpRateLimiter.windowMs,
       httpMaxRequests: httpRateLimiter.maxRequests,
+      httpCacheSize: httpRateLimiter.maxCacheSize,
       chatWindow: chatRateLimiter.windowMs,
       chatMaxRequests: chatRateLimiter.maxRequests,
+      chatCacheSize: chatRateLimiter.maxCacheSize,
     },
   };
 }
@@ -392,8 +478,8 @@ function startHttpApi() {
 
   server.listen(port, () => {
     console.log(`🌐 HTTP API listening on :${port}`);
-    console.log(`🛡️  Rate limiting: ${httpRateLimiter.maxRequests} requests per ${httpRateLimiter.windowMs}ms`);
-    console.log(`💬 Chat rate limiting: ${chatRateLimiter.maxRequests} requests per ${chatRateLimiter.windowMs}ms`);
+    console.log(`🛡️  Rate limiting: ${httpRateLimiter.maxRequests} requests per ${httpRateLimiter.windowMs}ms (cache: ${httpRateLimiter.maxCacheSize})`);
+    console.log(`💬 Chat rate limiting: ${chatRateLimiter.maxRequests} requests per ${chatRateLimiter.windowMs}ms (cache: ${chatRateLimiter.maxCacheSize})`);
   });
 
   return true;
@@ -469,83 +555,4 @@ async function startWhatsApp() {
   return true;
 }
 
-// ─── Telegram ─────────────────────────────────────────────────────────────────
-
-function startTelegram() {
-  if (envFlag('DISABLE_TELEGRAM')) {
-    console.log('⚪ Telegram disabled by DISABLE_TELEGRAM=true.');
-    return false;
-  }
-
-  if (!process.env.TELEGRAM_TOKEN) {
-    console.log('⚪ TELEGRAM_TOKEN not set — Telegram disabled.');
-    return false;
-  }
-
-  const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
-
-  bot.on('message', async (msg) => {
-    const rawId = String(msg.chat.id);
-    const userId = `tg_${rawId}`;
-    const text = String(msg.text || '').trim();
-    if (!text) return;
-
-    const reply = async (messageText) => {
-      const chunks = chunkText(messageText, 4000);
-      for (const chunk of chunks) {
-        await bot.sendMessage(msg.chat.id, chunk, { disable_web_page_preview: true });
-        await sleep(200);
-      }
-    };
-
-    const allowed = await guardMessage({ platform: 'telegram', userId, rawId, reply });
-    if (!allowed) return;
-
-    await meta.handle({ userId, platform: 'telegram', text, reply });
-  });
-
-  bot.on('polling_error', (err) => console.error('❌ Telegram polling error:', err.message));
-  console.log('✅ Telegram bot started.');
-  return true;
-}
-
-// ─── Utilities ────────────────────────────────────────────────────────────────
-
-function chunkText(text, maxLen) {
-  const chunks = [];
-  let rest = String(text || '');
-
-  while (rest.length > maxLen) {
-    chunks.push(rest.slice(0, maxLen));
-    rest = rest.slice(maxLen);
-  }
-
-  if (rest) chunks.push(rest);
-  return chunks;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ─── Main ─────────────────────────────────────────────────────────────────────
-
-async function main() {
-  console.log('🚀 OpenClaw Agent starting on Railway...');
-
-  const httpStarted = startHttpApi();
-  const telegramStarted = startTelegram();
-  const whatsappStarted = await startWhatsApp();
-  autoWorker.start();
-
-  if (!httpStarted && !whatsappStarted && !telegramStarted) {
-    console.error('❌ No platform configured. Set TELEGRAM_TOKEN and/or ENABLE_WHATSAPP=true with WA_PHONE_NUMBER.');
-    process.exit(1);
-  }
-
-  if (!isAllowAllEnabled() && !splitEnv('ALLOWED_USER_IDS').length && !splitEnv('ALLOWED_TELEGRAM_CHAT_IDS').length && !splitEnv('ALLOWED_WHATSAPP_NUMBERS').length && !splitEnv('ALLOWED_WEB_USER_IDS').length && !process.env.WEB_API_TOKEN) {
-    console.warn('⚠️ No allowlist/API token configured. Web without WEB_API_TOKEN requires ALLOWED_WEB_USER_IDS or ALLOW_ALL_USERS=true.');
-  }
-}
-
-main
+// ─── Telegram ─────────────────────────────────────
