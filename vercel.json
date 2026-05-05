@@ -4,26 +4,31 @@
   "redirects": [
     {
       "source": "/",
-      "destination": "/web/",
+      "destination": "/web/premium.html",
+      "permanent": false
+    },
+    {
+      "source": "/web/",
+      "destination": "/web/premium.html",
       "permanent": false
     }
   ],
   "rewrites": [
     {
       "source": "/app",
-      "destination": "/web/"
+      "destination": "/web/premium.html"
     },
     {
       "source": "/dashboard",
-      "destination": "/web/"
+      "destination": "/web/premium.html"
     },
     {
       "source": "/repair",
-      "destination": "/web/"
+      "destination": "/web/premium.html"
     },
     {
       "source": "/settings",
-      "destination": "/web/"
+      "destination": "/web/premium.html"
     }
   ],
   "headers": [
