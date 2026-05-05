@@ -1,30 +1,35 @@
-// router-pair-only.js — absolute minimal Railway server for WhatsApp pairing.
-// Purpose: make build/start reliable first. No AI agent, no Telegram, no heavy optional imports.
+// router-pair-only.js — minimal Railway server for WhatsApp pairing.
+// Focus: reliable pairing. No AI agent, no Telegram, no heavy optional imports.
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 try { require('dotenv').config(); } catch {}
 
 let sock = null;
 let connected = false;
 let pairingCode = '';
+let pairingRaw = '';
 let pairingAt = '';
 let lastError = '';
 let mode = 'booting';
 let starting = false;
+let baileysReady = false;
 
 const envFlag = (name) => String(process.env[name] || '').toLowerCase() === 'true';
 const digits = (value) => String(value || '').replace(/\D/g, '');
 const phoneNumber = () => digits(process.env.WA_PHONE_NUMBER || process.env.WHATSAPP_PHONE_NUMBER || process.env.PHONE_NUMBER || '');
+const authDir = () => process.env.WA_AUTH_DIR || './wa_auth';
 
-function sendJson(res, status, payload) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+function json(res, status, payload) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Agent-Token'
+  });
   res.end(JSON.stringify(payload, null, 2));
-}
-
-function setCors(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Agent-Token');
 }
 
 function authOk(req) {
@@ -45,25 +50,28 @@ function statusPayload() {
     model: 'none',
     whatsapp: Boolean(phoneNumber() && envFlag('ENABLE_WHATSAPP')),
     whatsappPhoneConfigured: Boolean(phoneNumber()),
+    whatsappPhoneLast4: phoneNumber() ? phoneNumber().slice(-4) : '',
     whatsappConnected: connected,
     whatsappMode: mode,
+    whatsappSocketReady: Boolean(sock && baileysReady),
     whatsappPairingReady: Boolean(pairingCode),
     whatsappPairingCode: process.env.EXPOSE_WA_PAIRING_CODE === 'true' ? pairingCode : Boolean(pairingCode),
+    whatsappPairingRaw: process.env.EXPOSE_WA_PAIRING_CODE === 'true' ? pairingRaw : Boolean(pairingRaw),
     whatsappPairingAt: pairingAt,
     whatsappLastError: lastError,
-    webApiToken: Boolean(process.env.WEB_API_TOKEN),
+    authDir: authDir(),
+    webApiToken: Boolean(process.env.WEB_API_TOKEN)
   };
 }
 
 async function loadBaileys() {
-  // New official package name is "baileys". Keep fallback for older package name.
   try {
     const mod = await import('baileys');
     return {
       makeWASocket: mod.default || mod.makeWASocket,
       useMultiFileAuthState: mod.useMultiFileAuthState,
       DisconnectReason: mod.DisconnectReason,
-      fetchLatestBaileysVersion: mod.fetchLatestBaileysVersion,
+      fetchLatestBaileysVersion: mod.fetchLatestBaileysVersion
     };
   } catch (firstErr) {
     const mod = await import('@whiskeysockets/baileys');
@@ -71,36 +79,63 @@ async function loadBaileys() {
       makeWASocket: mod.default || mod.makeWASocket,
       useMultiFileAuthState: mod.useMultiFileAuthState,
       DisconnectReason: mod.DisconnectReason,
-      fetchLatestBaileysVersion: mod.fetchLatestBaileysVersion,
+      fetchLatestBaileysVersion: mod.fetchLatestBaileysVersion
     };
   }
+}
+
+function printPairing(pair) {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('WHATSAPP_PAIRING_CODE=' + pair.code);
+  console.log('WHATSAPP_PAIRING_RAW=' + pair.raw);
+  console.log('WHATSAPP_PAIRING_PHONE=' + pair.phoneNumber);
+  console.log('Code is fresh. Use it immediately. It can expire quickly.');
+  console.log('WhatsApp → Linked devices → Link with phone number');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 }
 
 async function requestPairingCode() {
   const phone = phoneNumber();
   if (!phone) throw new Error('Missing WA_PHONE_NUMBER. Example: 31627355541');
-  if (!sock || typeof sock.requestPairingCode !== 'function') {
-    throw new Error('WhatsApp socket is not ready yet. Wait 10 seconds after deploy, then call /api/whatsapp/pair again.');
-  }
+  if (connected) return { alreadyRegistered: true, code: '', raw: '', phoneNumber: phone };
 
-  if (sock.authState?.creds?.registered) {
-    connected = true;
-    return { alreadyRegistered: true, code: '', phoneNumber: phone };
+  if (!sock || typeof sock.requestPairingCode !== 'function') {
+    if (!starting) startWhatsApp().catch(() => {});
+    throw new Error('WhatsApp socket is not ready yet. Wait 10 seconds after deploy, then call /api/whatsapp/pair again. Current mode: ' + mode);
   }
 
   const raw = await sock.requestPairingCode(phone);
-  const clean = String(raw || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-  pairingCode = clean.match(/.{1,4}/g)?.join('-') || clean;
+  pairingRaw = String(raw || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  pairingCode = pairingRaw.match(/.{1,4}/g)?.join('-') || pairingRaw;
   pairingAt = new Date().toISOString();
   lastError = '';
 
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log('WHATSAPP_PAIRING_CODE=' + pairingCode);
-  console.log('WHATSAPP_PAIRING_PHONE=' + phone);
-  console.log('WhatsApp → Linked devices → Link with phone number');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  const pair = { alreadyRegistered: false, code: pairingCode, raw: pairingRaw, phoneNumber: phone };
+  printPairing(pair);
+  return pair;
+}
 
-  return { alreadyRegistered: false, code: pairingCode, phoneNumber: phone };
+async function resetSession() {
+  const dir = path.resolve(authDir());
+  try {
+    if (sock?.end) sock.end();
+  } catch {}
+  sock = null;
+  connected = false;
+  pairingCode = '';
+  pairingRaw = '';
+  pairingAt = '';
+  baileysReady = false;
+  mode = 'resetting';
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch (err) {
+    lastError = 'Reset failed: ' + (err.message || String(err));
+    throw err;
+  }
+  lastError = '';
+  await startWhatsApp();
+  return { reset: true, authDir: dir, status: statusPayload() };
 }
 
 async function startWhatsApp() {
@@ -128,8 +163,7 @@ async function startWhatsApp() {
     try { logger = require('pino')({ level: process.env.WA_LOG_LEVEL || 'silent' }); }
     catch { logger = { child() { return this; }, trace(){}, debug(){}, info(){}, warn(){}, error(){} }; }
 
-    const authDir = process.env.WA_AUTH_DIR || './wa_auth';
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    const { state, saveCreds } = await useMultiFileAuthState(authDir());
     const version = fetchLatestBaileysVersion ? (await fetchLatestBaileysVersion()).version : undefined;
 
     mode = 'baileys-starting';
@@ -141,10 +175,14 @@ async function startWhatsApp() {
       browser: ['Martybot', 'Chrome', '2.0'],
       markOnlineOnConnect: false,
       syncFullHistory: false,
+      generateHighQualityLinkPreview: false
     });
 
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', (update) => {
+      if (update.connection === 'connecting') {
+        mode = 'connecting';
+      }
       if (update.connection === 'open') {
         connected = true;
         mode = 'connected';
@@ -170,12 +208,18 @@ async function startWhatsApp() {
       }
     });
 
+    baileysReady = true;
     mode = 'socket-ready';
     console.log('📱 WhatsApp socket ready for ' + phone);
-    setTimeout(() => requestPairingCode().catch((err) => {
-      lastError = err.message || String(err);
-      console.error('Pairing failed:', lastError);
-    }), 2500);
+    console.log('Generate fresh code manually: GET or POST /api/whatsapp/pair');
+
+    // Optional auto-pair only when explicitly enabled. Manual pair is safer because codes expire.
+    if (envFlag('WA_AUTO_PAIR')) {
+      setTimeout(() => requestPairingCode().catch((err) => {
+        lastError = err.message || String(err);
+        console.error('Pairing failed:', lastError);
+      }), 2500);
+    }
   } catch (err) {
     mode = 'startup-error';
     lastError = err.message || String(err);
@@ -188,32 +232,44 @@ async function startWhatsApp() {
 function startHttp() {
   const port = Number(process.env.PORT || process.env.HTTP_PORT || 3000);
   http.createServer(async (req, res) => {
-    setCors(req, res);
-    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Agent-Token'
+      });
+      return res.end();
+    }
+
     const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
-
     try {
-      if (req.method === 'GET' && ['/', '/health', '/api/status', '/api/whatsapp/status'].includes(url.pathname)) {
-        if (!authOk(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
-        return sendJson(res, 200, statusPayload());
+      if (['/', '/health', '/api/status', '/api/whatsapp/status'].includes(url.pathname)) {
+        if (!authOk(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+        return json(res, 200, statusPayload());
       }
 
-      if (req.method === 'POST' && url.pathname === '/api/whatsapp/pair') {
-        if (!authOk(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
-        return sendJson(res, 200, { ok: true, ...(await requestPairingCode()) });
+      if (url.pathname === '/api/whatsapp/pair' && (req.method === 'GET' || req.method === 'POST')) {
+        if (!authOk(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+        const pair = await requestPairingCode();
+        return json(res, 200, { ok: true, ...pair, hint: 'Use code immediately. If it fails, call /api/whatsapp/reset and then /api/whatsapp/pair again.' });
       }
 
-      if (req.method === 'POST' && url.pathname === '/api/chat') {
-        if (!authOk(req)) return sendJson(res, 401, { ok: false, error: 'Unauthorized' });
-        return sendJson(res, 200, { ok: true, replies: ['Martybot pair-only běží ✅\nPoužij /api/whatsapp/pair nebo sleduj Railway logs pro WHATSAPP_PAIRING_CODE.'] });
+      if (url.pathname === '/api/whatsapp/reset' && (req.method === 'GET' || req.method === 'POST')) {
+        if (!authOk(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+        return json(res, 200, { ok: true, ...(await resetSession()) });
       }
 
-      return sendJson(res, 404, { ok: false, error: 'Not found' });
+      if (url.pathname === '/api/chat' && req.method === 'POST') {
+        if (!authOk(req)) return json(res, 401, { ok: false, error: 'Unauthorized' });
+        return json(res, 200, { ok: true, replies: ['Martybot pair-only běží ✅\nPro nový kód otevři /api/whatsapp/pair. Když kód selže, otevři /api/whatsapp/reset a pak znovu /api/whatsapp/pair.'] });
+      }
+
+      return json(res, 404, { ok: false, error: 'Not found', path: url.pathname });
     } catch (err) {
       lastError = err.message || String(err);
-      return sendJson(res, 500, { ok: false, error: lastError, status: statusPayload() });
+      return json(res, 500, { ok: false, error: lastError, status: statusPayload() });
     }
-  }).listen(port, () => console.log('🌐 HTTP API listening on :' + port + ' router-pair-only'));
+  }).listen(port, '0.0.0.0', () => console.log('🌐 HTTP API listening on 0.0.0.0:' + port + ' router-pair-only'));
 }
 
 console.log('🚀 router-pair-only starting');
