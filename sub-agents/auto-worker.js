@@ -17,6 +17,10 @@ function now() {
   return new Date().toISOString();
 }
 
+function rel(workdir, file) {
+  return path.join(workdir, file);
+}
+
 class AutoWorker {
   constructor(metaAgent) {
     this.metaAgent = metaAgent;
@@ -24,6 +28,7 @@ class AutoWorker {
     this.timer = null;
     this.lastRun = null;
     this.lastResult = 'AutoWorker ještě neběžel.';
+    this.lastCodeReview = 'Audit kódu ještě neběžel.';
     this.running = false;
     this.intervalMs = Math.max(Number(process.env.AUTO_INTERVAL_MINUTES || 60), 5) * 60 * 1000;
     this.userId = process.env.AUTO_USER_ID || '';
@@ -79,17 +84,22 @@ class AutoWorker {
     try {
       const report = await this.safeAudit();
       this.lastResult = report;
-      await this.memory.addKnowledge(this.userId, report, {
-        source: 'auto-worker',
-        title: `Auto audit ${this.lastRun}`,
-      });
+
+      if (envFlag('AUTO_STORE_AUDITS')) {
+        await this.memory.addKnowledge(this.userId, report, {
+          source: 'auto-worker',
+          title: `Auto audit ${this.lastRun}`,
+        });
+      }
 
       if (this.shouldRunAutoImprove()) {
         const improveResult = await this.metaAgent.selfImprove.run((step) => console.log(`[auto] ${step}`));
-        await this.memory.addKnowledge(this.userId, improveResult, {
-          source: 'auto-improve',
-          title: `Auto improve ${now()}`,
-        });
+        if (envFlag('AUTO_STORE_AUDITS')) {
+          await this.memory.addKnowledge(this.userId, improveResult, {
+            source: 'auto-improve',
+            title: `Auto improve ${now()}`,
+          });
+        }
         this.lastResult += `\n\nAuto-improve:\n${improveResult}`;
       } else if (envFlag('AUTO_IMPROVE') || envFlag('ALLOW_AUTONOMOUS_WRITES')) {
         const reason = [
@@ -102,6 +112,53 @@ class AutoWorker {
     } finally {
       this.running = false;
     }
+  }
+
+  async codeReview(workdir = process.env.AGENT_WORKDIR || process.cwd()) {
+    const files = [
+      'router.js',
+      'meta-agent.js',
+      'sub-agents/executor.js',
+      'sub-agents/memory.js',
+      'sub-agents/self-improve.js',
+      'sub-agents/git-workspace.js',
+      'sub-agents/auto-worker.js',
+      'scripts/ensure-git-workdir.js',
+    ];
+
+    const suggestions = [];
+    const missing = [];
+
+    for (const file of files) {
+      try {
+        const content = await fs.readFile(rel(workdir, file), 'utf-8');
+        const lines = content.split('\n').length;
+
+        if (lines > 450) suggestions.push(`• ${file}: soubor má ${lines} řádků — zvážit rozdělení na menší moduly.`);
+        if (content.includes('process.exit(1)')) suggestions.push(`• ${file}: obsahuje process.exit(1) — u Railway raději graceful fallback, pokud nejde o fatální start.`);
+        if (content.includes('console.error') && !content.includes('sanitize')) suggestions.push(`• ${file}: loguje chyby — zkontrolovat maskování tokenů a citlivých hodnot.`);
+        if (content.includes('setImmediate') && !content.includes('try')) suggestions.push(`• ${file}: async background běh — ověřit try/catch a notifikaci uživateli.`);
+        if (content.match(/TODO|FIXME/i)) suggestions.push(`• ${file}: obsahuje TODO/FIXME — projít a zařadit do plánu.`);
+      } catch {
+        missing.push(file);
+      }
+    }
+
+    if (missing.length) suggestions.push(`• Chybějící soubory: ${missing.join(', ')}`);
+    if (!suggestions.length) suggestions.push('• Statická kontrola nenašla zásadní problém. Další krok: testy + ruční review UX toků.');
+
+    const report = [
+      '🔍 Návrhy vylepšení kódu',
+      `• Čas: ${now()}`,
+      `• Workdir: ${workdir}`,
+      '',
+      ...suggestions.slice(0, 12),
+      '',
+      'Bezpečnostní režim: pouze návrhy. Kód se automaticky nemění, pokud nejsou zapnuté všechny pojistky.',
+    ].join('\n');
+
+    this.lastCodeReview = report;
+    return report;
   }
 
   async safeAudit() {
@@ -142,6 +199,9 @@ class AutoWorker {
 
     this.gitOk = gitOk;
 
+    const review = await this.codeReview(workdir);
+    checks.push('Code review: hotovo, návrhy dostupné přes /auto code');
+
     if (envFlag('AUTO_IMPROVE')) {
       checks.push(`Auto-improve pojistka: ${this.shouldRunAutoImprove() ? 'povoleno' : 'blokováno'}`);
       if (!envFlag('AUTO_IMPROVE_CONFIRMED')) checks.push('Auto-improve důvod: chybí AUTO_IMPROVE_CONFIRMED=true');
@@ -151,7 +211,7 @@ class AutoWorker {
     const stats = await this.memory.stats(this.userId);
     checks.push(`Paměť: ${stats.knowledge} poznámek, ${stats.messages} zpráv`);
 
-    return `🤖 Auto audit\n${checks.map((line) => `• ${line}`).join('\n')}`;
+    return `🤖 Auto audit\n${checks.map((line) => `• ${line}`).join('\n')}\n\n${review}`;
   }
 
   statusText() {
@@ -170,6 +230,7 @@ class AutoWorker {
       `• ALLOW_AUTONOMOUS_WRITES: ${envFlag('ALLOW_AUTONOMOUS_WRITES') ? 'true' : 'false'}`,
       `• AUTO_IMPROVE_CONFIRMED: ${envFlag('AUTO_IMPROVE_CONFIRMED') ? 'true' : 'false'}`,
       `• GIT_AUTO_SETUP: ${envFlag('GIT_AUTO_SETUP') ? 'true' : 'false'}`,
+      `• AUTO_STORE_AUDITS: ${envFlag('AUTO_STORE_AUDITS') ? 'true' : 'false'}`,
       'Autonomní změny kódu se spustí jen když jsou AUTO_IMPROVE=true, ALLOW_AUTONOMOUS_WRITES=true, AUTO_IMPROVE_CONFIRMED=true a git workspace je OK.',
     ].join('\n');
   }
