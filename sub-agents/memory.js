@@ -240,6 +240,18 @@ class Memory {
     return item;
   }
 
+  async removeKnowledge(userId, id) {
+    const cleanId = String(id || '').trim();
+    if (!cleanId) throw new Error('Knowledge ID is empty.');
+
+    const data = await this._load(userId);
+    const before = data.knowledge.length;
+    data.knowledge = data.knowledge.filter((item) => item.id !== cleanId);
+    const removed = before - data.knowledge.length;
+    await this._save(userId, data);
+    return { removed, remaining: data.knowledge.length };
+  }
+
   async listKnowledge(userId, limit = 20) {
     const data = await this._load(userId);
     return data.knowledge.slice(-limit).reverse();
@@ -247,7 +259,10 @@ class Memory {
 
   async getKnowledgeContext(userId, maxChars = 10000) {
     const data = await this._load(userId);
-    const items = data.knowledge.slice(-80).reverse();
+    const items = data.knowledge
+      .filter((item) => !['auto-worker', 'auto-improve', 'system-audit'].includes(item.source))
+      .slice(-80)
+      .reverse();
     let out = '';
 
     for (const item of items) {
