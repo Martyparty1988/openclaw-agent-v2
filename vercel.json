@@ -1,9 +1,40 @@
 {
-  "version": 2,
-  "public": true,
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/web/",
+      "permanent": false
+    }
+  ],
   "rewrites": [
-    { "source": "/api/status", "destination": "/api/status.js" },
-    { "source": "/api/chat", "destination": "/api/chat.js" },
-    { "source": "/(.*)", "destination": "/web/repair.html" }
+    {
+      "source": "/app",
+      "destination": "/web/"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/web/"
+    },
+    {
+      "source": "/repair",
+      "destination": "/web/"
+    },
+    {
+      "source": "/settings",
+      "destination": "/web/"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/web/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
+        }
+      ]
+    }
   ]
 }
