@@ -48,11 +48,15 @@ class RateLimiter {
   }
 
   cleanup() {
-    const now = Date.now();
-    for (const [key, record] of this.requests.entries()) {
-      if (now > record.resetTime) {
-        this.requests.delete(key);
+    try {
+      const now = Date.now();
+      for (const [key, record] of this.requests.entries()) {
+        if (now > record.resetTime) {
+          this.requests.delete(key);
+        }
       }
+    } catch (err) {
+      console.error('Rate limiter cleanup error:', err.message);
     }
   }
 }
@@ -68,11 +72,44 @@ const chatRateLimiter = new RateLimiter(
   Number(process.env.CHAT_RATE_LIMIT_MAX_REQUESTS || 10)  // 10 chat requests per minute
 );
 
-// Cleanup old entries every 5 minutes
-setInterval(() => {
-  httpRateLimiter.cleanup();
-  chatRateLimiter.cleanup();
-}, 5 * 60 * 1000);
+// Track cleanup interval for graceful shutdown
+let cleanupInterval;
+
+// Cleanup old entries every 5 minutes with error handling
+function startCleanupInterval() {
+  cleanupInterval = setInterval(() => {
+    try {
+      httpRateLimiter.cleanup();
+      chatRateLimiter.cleanup();
+    } catch (err) {
+      console.error('Rate limiter cleanup error:', err.message);
+    }
+  }, 5 * 60 * 1000);
+}
+
+// Graceful shutdown handler
+function stopCleanupInterval() {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+}
+
+// Start the cleanup interval
+startCleanupInterval();
+
+// Handle process shutdown gracefully
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM, shutting down gracefully...');
+  stopCleanupInterval();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('Received SIGINT, shutting down gracefully...');
+  stopCleanupInterval();
+  process.exit(0);
+});
 
 // ─── Access Control ───────────────────────────────────────────────────────────
 
