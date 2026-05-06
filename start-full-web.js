@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const BOOT_VERSION = 'martybot-telegram-menu-2026-05-06-v9';
+const BOOT_VERSION = 'martybot-telegram-menu-2026-05-06-v10-web-agent-sync';
 const repoUrl = process.env.GIT_REPO_URL || 'https://github.com/Martyparty1988/openclaw-agent-v2.git';
 const branch = process.env.GIT_BRANCH || 'main';
 const workdir = process.env.AGENT_WORKDIR || '/tmp/martybot-workdir';
@@ -68,4 +68,5 @@ require('./telegram-menu.js');
 require('./openclaw-upstream.js');
 require('./shortcuts-upstream.js');
 require('./web-static-patch.js');
+require('./web-agent-sync-patch.js');
 require('./router-full-web.js');
