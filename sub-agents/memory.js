@@ -8,10 +8,16 @@ const fs = require('fs').promises;
 const path = require('path');
 
 let createClient = null;
+let wsTransport = null;
 try {
   ({ createClient } = require('@supabase/supabase-js'));
 } catch {
   createClient = null;
+}
+try {
+  wsTransport = require('ws');
+} catch {
+  wsTransport = null;
 }
 
 const MEMORY_DIR = path.resolve(process.env.MEMORY_DIR || './agent-memory');
@@ -24,7 +30,7 @@ let supabaseDisabledReason = '';
 let supabaseWarningPrinted = false;
 
 function normalizeUrl(value) {
-  return String(value || '').trim().replace(/^['"]|['"]$/g, '');
+  return String(value || '').trim().replace(/^['\"]|['\"]$/g, '');
 }
 
 function getSupabaseConfig() {
@@ -66,12 +72,20 @@ function getSupabaseClient() {
 
   if (!supabaseClient) {
     try {
-      supabaseClient = createClient(url, key, {
+      const supabaseOptions = {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
         },
-      });
+      };
+
+      if (wsTransport) {
+        supabaseOptions.realtime = {
+          transport: wsTransport,
+        };
+      }
+
+      supabaseClient = createClient(url, key, supabaseOptions);
     } catch (err) {
       supabaseDisabledReason = `Supabase client nejde vytvořit: ${err.message}. Používám JSON paměť.`;
       warnOnce(supabaseDisabledReason);
