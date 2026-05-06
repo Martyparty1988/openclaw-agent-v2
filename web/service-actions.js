@@ -6,7 +6,7 @@
     ['🔗','WhatsApp Pair Code','/api/whatsapp/pair'],
     ['🧼','WhatsApp Fresh Pair','fresh-wa'],
     ['♻️','WhatsApp Reset','/api/whatsapp/reset'],
-    ['⬇️','Git Pull','/api/chat','/git pull'],
+    ['⬇️','Git Pull','/api/git/pull-safe'],
     ['🦾','OpenClaw Pull','/api/openclaw/pull'],
     ['✨','Web Improve','/api/web/improve-safe'],
     ['🧠','Agent Reload','/api/chat','/agent reload']
