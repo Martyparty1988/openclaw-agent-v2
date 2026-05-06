@@ -67,6 +67,24 @@ function pickHtml(web) {
   return candidates.find((name) => isFile(path.join(web, name))) || '';
 }
 
+function buildRecommendations(checks) {
+  const recs = [];
+  const byName = new Map(checks.map(([name, ok, detail]) => [name, { ok, detail }]));
+  if (!byName.get('AGENT_WORKDIR exists')?.ok) recs.push('Nastav Railway variable AGENT_WORKDIR na /data/openclaw-agent-v2 a udělej redeploy.');
+  if (!byName.get('Git repo')?.ok) recs.push('Zkontroluj GIT_REPO_URL, GIT_BRANCH a GIT_TOKEN. Repo se musí naklonovat do AGENT_WORKDIR.');
+  if (!byName.get('Git clean')?.ok) recs.push('Git workspace má lokální změny. Spusť Git status a rozhodni, jestli je commitnout nebo resetnout.');
+  if (!byName.get('Web dir exists')?.ok) recs.push('Web složka neexistuje. Ověř, že repo obsahuje /web a že web-static-patch servíruje správný klon.');
+  if (!byName.get('Active HTML')?.ok) recs.push('Chybí aktivní HTML. Přidej web/index.clean.html nebo web/index.html.');
+  if (!byName.get('Safe Web Improve endpoint file')?.ok) recs.push('Chybí web-safe-improve-endpoint.js. Pullni poslední změny z GitHubu nebo redeployni aktuální commit.');
+  if (!byName.get('Diagnostics endpoint file')?.ok) recs.push('Chybí diagnostics-endpoint.js. Pullni poslední změny z GitHubu nebo redeployni aktuální commit.');
+  if (!byName.get('Telegram token')?.ok) recs.push('Pokud chceš Telegram, nastav TELEGRAM_BOT_TOKEN nebo TELEGRAM_TOKEN.');
+  if (!byName.get('AI provider')?.ok) recs.push('Nastav aspoň jeden AI klíč: OPENROUTER_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY nebo ANTHROPIC_API_KEY.');
+  if (!byName.get('Web API token')?.ok) recs.push('Doporučení: nastav WEB_API_TOKEN, ať webové API není otevřené bez ochrany.');
+  if (!byName.get('OpenClaw upstream')?.ok) recs.push('OpenClaw upstream není naklonovaný. V logu zkontroluj openclaw clone/pull, případně ENABLE_OPENCLAW_UPSTREAM.');
+  if (!recs.length) recs.push('Všechno vypadá zdravě. Další krok: test Web Improve a Git push.');
+  return recs;
+}
+
 async function collectDiagnostics() {
   const workdir = path.resolve(process.env.AGENT_WORKDIR || process.cwd());
   const web = path.resolve(webDir());
@@ -100,6 +118,7 @@ async function collectDiagnostics() {
     ['OpenClaw upstream', openclawRepo, openclawRepo ? 'commit ' + (openclawCommit.stdout || 'unknown') : 'not cloned'],
   ];
 
+  const recommendations = buildRecommendations(checks);
   const okCount = checks.filter(([, ok]) => ok).length;
   const lines = [];
   lines.push('🩺 Martybot diagnostika');
@@ -110,6 +129,9 @@ async function collectDiagnostics() {
     lines.push((ok ? '✅ ' : '⚠️ ') + name + ': ' + detail);
   }
   lines.push('');
+  lines.push('🧭 Doporučení:');
+  recommendations.forEach((item, index) => lines.push((index + 1) + '. ' + item));
+  lines.push('');
   lines.push('Poznámka: výstup neobsahuje žádné tokeny ani tajné hodnoty.');
 
   return {
@@ -117,6 +139,7 @@ async function collectDiagnostics() {
     score: okCount,
     total: checks.length,
     checks: checks.map(([name, ok, detail]) => ({ name, ok, detail })),
+    recommendations,
     text: lines.join('\n'),
   };
 }
