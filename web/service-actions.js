@@ -1,6 +1,7 @@
 (function(){
   const actions=[
     ['🩺','Diagnostika','/api/diagnostics'],
+    ['📜','Runtime Logs','/api/logs'],
     ['🧪','Git Test Push','/api/git/test-push'],
     ['📨','Restart Telegram','/api/telegram/restart'],
     ['🔗','WhatsApp Pair Code','/api/whatsapp/pair'],
@@ -24,7 +25,7 @@
     wrap.className='msg-wrap '+(bad?'sys':'bot');
     const msg=document.createElement('div');
     msg.className='msg';
-    msg.innerHTML='<strong>'+esc(title)+'</strong><pre><code>'+esc(String(body||'').slice(0,5000))+'</code></pre>';
+    msg.innerHTML='<strong>'+esc(title)+'</strong><pre><code>'+esc(String(body||'').slice(0,7000))+'</code></pre>';
     wrap.appendChild(msg); box.appendChild(wrap); box.scrollTop=box.scrollHeight;
   }
   async function call(path,json){
