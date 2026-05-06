@@ -95,6 +95,12 @@ try {
 }
 
 try {
+  require('./doctor-endpoint.js');
+} catch (err) {
+  console.error('[web-static-patch] doctor endpoint failed:', err && err.message || err);
+}
+
+try {
   require('./git-push-test-endpoint.js');
 } catch (err) {
   console.error('[web-static-patch] git push test endpoint failed:', err && err.message || err);
