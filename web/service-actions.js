@@ -1,6 +1,7 @@
 (function(){
   const actions=[
     ['🩺','Diagnostika','/api/diagnostics'],
+    ['🧪','Git Test Push','/api/git/test-push'],
     ['📨','Restart Telegram','/api/telegram/restart'],
     ['🔗','WhatsApp Pair Code','/api/whatsapp/pair'],
     ['🧼','WhatsApp Fresh Pair','fresh-wa'],
