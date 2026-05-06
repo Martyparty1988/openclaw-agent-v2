@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node start-full-web.js",
     "deploy:check": "node scripts/deploy-preflight.js",
-    "git:check": "node scripts/ensure-git-workdir.js"
+    "git:check": "node scripts/ensure-git-workdir.js",
+    "build": "npm run setup-agent",
+    "setup-agent": "node scripts/init-agent.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
