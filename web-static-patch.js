@@ -76,4 +76,10 @@ http.createServer = function createServerWithWeb(options, listener) {
   return options === undefined ? originalCreateServer(wrapped) : originalCreateServer(options, wrapped);
 };
 
+try {
+  require('./web-safe-improve-endpoint.js');
+} catch (err) {
+  console.error('[web-static-patch] safe improve endpoint failed:', err && err.message || err);
+}
+
 console.log('Static Martybot clean web UI enabled on / from ' + webDir);
