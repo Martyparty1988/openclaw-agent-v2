@@ -94,4 +94,10 @@ try {
   console.error('[web-static-patch] git push test endpoint failed:', err && err.message || err);
 }
 
+try {
+  require('./git-pull-endpoint.js');
+} catch (err) {
+  console.error('[web-static-patch] git pull endpoint failed:', err && err.message || err);
+}
+
 console.log('Static Martybot clean web UI enabled on / from ' + webDir);
