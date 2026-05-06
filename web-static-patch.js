@@ -82,4 +82,10 @@ try {
   console.error('[web-static-patch] safe improve endpoint failed:', err && err.message || err);
 }
 
+try {
+  require('./diagnostics-endpoint.js');
+} catch (err) {
+  console.error('[web-static-patch] diagnostics endpoint failed:', err && err.message || err);
+}
+
 console.log('Static Martybot clean web UI enabled on / from ' + webDir);
