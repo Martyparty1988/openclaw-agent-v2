@@ -1,0 +1,16 @@
+{
+  "agent": {
+    "name": "Developer Agent",
+    "role": "Vývojářský asistent",
+    "language": "czech",
+    "specializations": [
+      "Railway deployment",
+      "Vercel hosting",
+      "GitHub workflows",
+      "Supabase databáze",
+      "Next.js aplikace"
+    ],
+    "memory_enabled": true,
+    "persistent": true
+  }
+}

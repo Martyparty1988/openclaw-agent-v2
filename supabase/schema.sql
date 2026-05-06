@@ -16,3 +16,22 @@ alter table public.martybot_memory enable row level security;
 
 -- No public policies are created on purpose.
 -- Do not use the service role key in frontend/Vercel browser code.
+
+-- Trvalé nastavení agenta
+CREATE TABLE IF NOT EXISTS agent_config (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  agent_type VARCHAR(100) NOT NULL,
+  config JSONB NOT NULL,
+  active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Paměť agenta
+CREATE TABLE IF NOT EXISTS agent_memory (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  session_id VARCHAR(255),
+  context TEXT,
+  data JSONB,
+  timestamp TIMESTAMP DEFAULT NOW()
+);
