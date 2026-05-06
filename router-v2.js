@@ -126,18 +126,36 @@ function isApiAuthorized(req) {
 function readJsonBody(req, maxBytes = 30000) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let receivedBytes = 0;
+    let settled = false;
+
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+
     req.on('data', (chunk) => {
-      body += chunk;
-      if (Buffer.byteLength(body) > maxBytes) {
-        reject(new Error('Request body too large.'));
+      receivedBytes += chunk.length;
+      if (receivedBytes > maxBytes) {
+        fail(new Error('Request body too large.'));
         req.destroy();
+        return;
+      }
+      body += chunk;
+    });
+
+    req.on('end', () => {
+      if (settled) return;
+      if (!body.trim()) return resolve({});
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        fail(new Error('Invalid JSON body.'));
       }
     });
-    req.on('end', () => {
-      if (!body.trim()) return resolve({});
-      try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON body.')); }
-    });
-    req.on('error', reject);
+
+    req.on('error', fail);
   });
 }
 
