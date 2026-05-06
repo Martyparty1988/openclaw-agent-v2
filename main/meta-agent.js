@@ -50,7 +50,7 @@ const COMMANDS = {
   menu: ['menu', 'hlavni menu', 'hlavní menu'],
   agent: ['agent', 'agents', 'agent mode', 'režim agenta', 'rezim agenta', 'vyber agenta', 'výběr agenta'],
   git: ['git', 'git status', 'git setup', 'git pull', 'git push', 'repo'],
-  auto: ['auto', 'autonomně', 'autonomne', 'autonomie', 'autonomní režim', 'autonomni rezim'],
+  auto: ['auto', 'autonomně', 'autonomne', 'autonome', 'autonomie', 'autonomní režim', 'autonomni rezim'],
   model: ['model', 'models', 'přepni model', 'prepni model', 'jazykový model', 'jazykovy model'],
   email: ['email', 'mail', 'send email', 'pošli email', 'posli email', 'pošli mail', 'posli mail'],
   learn: ['learn', 'nauč se', 'nauc se', 'načti', 'nacti', 'ulož zdroj', 'uloz zdroj'],
@@ -83,6 +83,10 @@ function parseCommand(text) {
   if (lower === 'git' || lower.startsWith('git ')) return { command: 'git', task: normalized.slice(3).trim() };
   if (lower === 'auto' || lower.startsWith('auto ')) return { command: 'auto', task: normalized.slice(4).trim() };
   if (lower === 'agent' || lower.startsWith('agent ')) return { command: 'agent', task: normalized.slice(5).trim() };
+
+  if (lower.includes('autonom') && (lower.includes('vyleps') || lower.includes('zleps') || lower.includes('improv'))) {
+    return { command: 'improve', task: normalized };
+  }
 
   for (const [cmd, keywords] of Object.entries(COMMANDS)) {
     for (const kw of keywords) {
@@ -148,12 +152,6 @@ function splitLongText(text, maxLen = 3600) {
   return out;
 }
 
-function envTrue(name, fallback = false) {
-  const raw = process.env[name];
-  if (raw == null) return fallback;
-  return String(raw).toLowerCase() === 'true';
-}
-
 function modeNote(provider) {
   if (provider === 'openrouter') return 'OpenRouter režim je text-only. Free volba: /model openrouter free.';
   if (provider === 'deepseek') return 'DeepSeek režim je text-only provider přes OpenAI-compatible API.';
@@ -205,7 +203,6 @@ class MetaAgent {
     this.learner = new Learner();
     this.gitWorkspace = GitWorkspace;
     this.autoWorker = null;
-    this.pendingApprovals = new Map();
   }
 
   setAutoWorker(autoWorker) {
@@ -223,67 +220,12 @@ class MetaAgent {
     return key;
   }
 
-  requiresConfirmation(command) {
-    if (!envTrue('CONFIRM_BEFORE_EXECUTE', true)) return false;
-    return ['execute', 'improve'].includes(command);
-  }
-
-  estimateRisk(command, task = '') {
-    if (command === 'improve') return { level: 'high', reason: 'Může měnit více souborů, spouštět testy a vytvářet commity.' };
-    const lowered = String(task || '').toLowerCase();
-    const highSignals = ['delete', 'drop', 'rm ', 'push', 'deploy', '.env', 'secret'];
-    if (highSignals.some((s) => lowered.includes(s))) return { level: 'high', reason: 'Úkol obsahuje operace s vyšším dopadem (mazání/deploy/secrets).' };
-    return { level: 'medium', reason: 'Může měnit kód a spouštět nástroje v repozitáři.' };
-  }
-
-  savePendingApproval(userId, command, task) {
-    this.pendingApprovals.set(String(userId), {
-      command,
-      task,
-      requestedAt: new Date().toISOString(),
-      expiresAt: Date.now() + (Number(process.env.APPROVAL_TTL_MS || 10 * 60 * 1000)),
-    });
-  }
-
-  consumePendingApproval(userId) {
-    const key = String(userId);
-    const pending = this.pendingApprovals.get(key);
-    if (!pending) return null;
-    this.pendingApprovals.delete(key);
-    if (Date.now() > Number(pending.expiresAt || 0)) return null;
-    return pending;
-  }
-
   async handle(msg) {
     const { userId, platform, text, reply } = msg;
     const { command, task } = parseCommand(text);
     console.log(`[${platform.toUpperCase()}][${userId}] ${command}: ${task || '—'}`);
 
     try {
-      if (command === 'chat') {
-        const lowerTask = String(task || '').trim().toLowerCase();
-        if (['approve', 'schvaluji', 'schvalit', 'ok'].includes(lowerTask)) {
-          const pending = this.consumePendingApproval(userId);
-          if (!pending) return reply('ℹ️ Není co schválit nebo vypršelo čekání. Spusť /execute nebo /improve znovu.');
-          await reply(`✅ Schváleno. Spouštím: ${pending.command}${pending.task ? ` — ${pending.task}` : ''}`);
-          if (pending.command === 'execute') {
-            const plan = await this.planner.create(userId, pending.task);
-            const steps = [];
-            const result = await this.executor.run(userId, plan, (s) => steps.push(s));
-            await this.memory.add(userId, 'assistant', result.output);
-            return reply(['✅ Hotovo!', '', result.output, steps.length ? `\n🔧 ${steps.length} kroků provedeno` : ''].filter(Boolean).join('\n'));
-          }
-          if (pending.command === 'improve') {
-            const result = await this.selfImprove.run((step) => reply(`⏳ ${step}`));
-            return reply(`✅ Self-improve dokončen!\n\n${result}`);
-          }
-        }
-        if (['reject', 'zamítnout', 'cancel', 'zrusit'].includes(lowerTask)) {
-          this.pendingApprovals.delete(String(userId));
-          return reply('🛑 Požadovaná akce zamítnuta.');
-        }
-      }
-
       switch (command) {
         case 'menu':
           await reply(menuText(this.getAgentMode(userId)));
@@ -486,12 +428,6 @@ class MetaAgent {
 
         case 'execute': {
           if (!task) return reply('❌ Zadej co spustit. Příklad: /execute oprav bug v router.js');
-          if (this.requiresConfirmation('execute')) {
-            const plan = await this.planner.create(userId, task);
-            const risk = this.estimateRisk('execute', task);
-            this.savePendingApproval(userId, 'execute', task);
-            return reply(['🛂 Potřebuji schválení před spuštěním /execute.', `• Riziko: ${risk.level}`, `• Důvod: ${risk.reason}`, '', formatPlan(plan), '', 'Odpověz: "approve" nebo "reject".'].join('\n'));
-          }
           await reply('⚙️ Spouštím agenta... Dostaneš notifikaci až bude hotovo.');
           setImmediate(async () => {
             const steps = [];
@@ -509,11 +445,6 @@ class MetaAgent {
         }
 
         case 'improve': {
-          if (this.requiresConfirmation('improve')) {
-            const risk = this.estimateRisk('improve');
-            this.savePendingApproval(userId, 'improve', '');
-            return reply(['🛂 Potřebuji schválení před spuštěním /improve.', `• Riziko: ${risk.level}`, `• Důvod: ${risk.reason}`, '• Plán: analyzovat kód → navrhnout změny → validovat → commit.', '', 'Odpověz: "approve" nebo "reject".'].join('\n'));
-          }
           await reply('🧬 Self-improve spuštěn... Analyzuji svůj kód, refaktoruji, testuji a commitnu změny.');
           setImmediate(async () => {
             try {
