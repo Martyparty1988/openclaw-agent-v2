@@ -18,6 +18,7 @@ function fileFor(url) {
   if (pathname === '/' || pathname === '/web' || pathname === '/web/') return path.join(webDir, 'index.html');
   if (pathname === '/manifest.webmanifest') return path.join(webDir, 'manifest.webmanifest');
   if (pathname === '/icon.svg' || pathname === '/favicon.ico') return path.join(webDir, 'icon.svg');
+  if (pathname === '/service-actions.js') return path.join(webDir, 'service-actions.js');
   if (!pathname.startsWith('/web/')) return '';
   const clean = pathname.replace('/web/', '').replace(/\.\./g, '');
   return path.join(webDir, clean);
@@ -34,6 +35,14 @@ function sendFile(req, res) {
     'Cache-Control': ext === '.html' ? 'no-store' : 'public, max-age=3600'
   });
   if (req.method === 'HEAD') return res.end(), true;
+  if (ext === '.html') {
+    let html = fs.readFileSync(file, 'utf8');
+    if (!html.includes('service-actions.js')) {
+      html = html.replace('</body>', '<script src="/web/service-actions.js"></script></body>');
+    }
+    res.end(html);
+    return true;
+  }
   fs.createReadStream(file).pipe(res);
   return true;
 }
