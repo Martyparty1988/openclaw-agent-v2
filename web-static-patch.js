@@ -45,7 +45,7 @@ function fileFor(url) {
   if (pathname === '/icon.svg' || pathname === '/favicon.ico') return path.join(webDir, 'icon.svg');
   const rootFiles = [
     '/styles.css', '/app.js', '/service-actions.js', '/martybot-pro.js', '/window-manager.js', '/same-origin-only.js',
-    '/manifest.webmanifest', '/icon.svg'
+    '/service-worker.js', '/manifest.webmanifest', '/icon.svg'
   ];
   if (rootFiles.includes(pathname)) return path.join(webDir, pathname.slice(1));
   if (!pathname.startsWith('/web/')) return '';
