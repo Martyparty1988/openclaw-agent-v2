@@ -53,10 +53,10 @@
       <button class="status-pill warn" id="topStatus">Kontroluji…</button>
     </div>
     <div class="stats">
-      <div class="stat primary"><small>🔌 Backend</small><b id="statBackend">—</b></div>
-      <div class="stat"><small>🧠 Model</small><b id="statModel">—</b></div>
-      <div class="stat"><small>⚙️ Provider</small><b id="statProvider">—</b></div>
-      <div class="stat"><small>🤖 Auto</small><b id="statAuto">—</b></div>
+      <div class="stat primary" data-cmd="/status" role="button" tabindex="0" title="Spustit /status"><small>🔌 Backend</small><b id="statBackend">—</b></div>
+      <div class="stat" data-cmd="/model" role="button" tabindex="0" title="Spustit /model"><small>🧠 Model</small><b id="statModel">—</b></div>
+      <div class="stat" data-cmd="/status" role="button" tabindex="0" title="Spustit /status"><small>⚙️ Provider</small><b id="statProvider">—</b></div>
+      <div class="stat" data-cmd="/auto status" role="button" tabindex="0" title="Spustit /auto status"><small>🤖 Auto</small><b id="statAuto">—</b></div>
     </div>
   </div>
 
@@ -140,7 +140,7 @@ const TEMPLATES=[['➕ Přidat poznámku','Uloží fakt do paměti','/remember '
 function renderLists(){const q=s=>esc(s).replace(/"/g,'&quot;');const aHtml=ACTIONS.slice(0,6).map(a=>`<button class="act-btn" data-cmd="${q(a[3])}"><span class="ico">${a[0]}</span><span><strong>${a[1]}</strong><small>${a[2]}</small></span></button>`).join('');const da=$('desktopActions');if(da)da.innerHTML=aHtml;const big=$('bigActions');if(big)big.innerHTML=ACTIONS.map(a=>`<button class="big-card" data-cmd="${q(a[3])}"><span class="ico">${a[0]}</span><span><strong>${a[1]}</strong><p>${a[2]}</p></span></button>`).join('');const mHtml=MODELS.map(m=>`<button class="mdl-btn" data-cmd="${q(m[2])}"><span>${m[0]}</span><small>${m[1]}</small></button>`).join('');['desktopModels','mobileModels'].forEach(id=>{const el=$(id);if(el)el.innerHTML=mHtml});const tl=$('templateList');if(tl)tl.innerHTML=TEMPLATES.map(t=>`<button class="tmpl-btn" data-fill="${q(t[2])}"><strong>${t[0]}</strong><small>${t[1]}</small></button>`).join('')}
 function updateSwitches(){$('hapticSwitch').classList.toggle('on',haptics);$('saveChatSwitch').classList.toggle('on',saveChat)}
 $('textInput').addEventListener('input',autoGrow);$('textInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();const t=$('textInput').value.trim();if(t){$('textInput').value='';autoGrow();send(t)}}});$('sendBtn').onclick=()=>{const t=$('textInput').value.trim();if(t){$('textInput').value='';autoGrow();send(t)}};
-document.addEventListener('click',e=>{const b=e.target.closest('[data-cmd],[data-fill]');if(!b)return;if(b.dataset.cmd)send(b.dataset.cmd);if(b.dataset.fill)fill(b.dataset.fill)});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-cmd],[data-fill]');if(!b)return;if(b.dataset.cmd)send(b.dataset.cmd);if(b.dataset.fill)fill(b.dataset.fill)});document.addEventListener('keydown',e=>{if(e.key!=='Enter'&&e.key!==' ')return;const b=e.target.closest('[data-cmd],[data-fill]');if(!b)return;e.preventDefault();if(b.dataset.cmd)send(b.dataset.cmd);if(b.dataset.fill)fill(b.dataset.fill)});
 document.querySelectorAll('.tabbar button').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
 $('saveSettings').onclick=()=>saveConnection(false);$('saveSettingsMobile').onclick=()=>saveConnection(true);$('refreshBtn').onclick=()=>loadStatus(true);$('testMobileBtn').onclick=()=>loadStatus(true);$('topStatus').onclick=()=>loadStatus(true);$('clearBtn').onclick=()=>{$('messages').innerHTML='<div class="msg-wrap sys"><div class="msg">Chat vyčištěn. Paměť agenta zůstává.</div></div>';localStorage.removeItem('martybotLastChat');toast('Chat vyčištěn')};
 $('diagAutoBtn').onclick=()=>{showTab('chat');loadStatus(true,'auto')};$('diagProxyBtn').onclick=()=>{showTab('chat');loadStatus(true,'proxy')};$('diagDirectBtn').onclick=()=>{showTab('chat');loadStatus(true,'direct')};$('useProxyBtn').onclick=()=>{apiMode='proxy';localStorage.setItem('martybotMode','proxy');initInputs();toast('Režim proxy nastaven','ok');loadStatus(true,'proxy')};$('useAutoBtn').onclick=()=>{apiMode='auto';localStorage.setItem('martybotMode','auto');initInputs();toast('Režim Auto nastaven','ok');loadStatus(true,'auto')};
