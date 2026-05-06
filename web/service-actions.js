@@ -49,6 +49,16 @@
     if(data?.reply) return data.reply;
     return typeof data==='string'?data:JSON.stringify(data,null,2);
   }
+  function setBtnLoading(el,on){
+    if(!el)return;
+    el.disabled=!!on;
+    el.classList.toggle('loading',!!on);
+    const small=el.querySelector('small');
+    if(small){
+      if(!small.dataset.original)small.dataset.original=small.textContent||'';
+      small.textContent=on?'Běžím, počkej…':small.dataset.original;
+    }
+  }
   async function freshPair(){
     note('WhatsApp Fresh Pair ⏳','Resetuji session…',false);
     await call('/api/whatsapp/reset');
@@ -57,8 +67,10 @@
     const pair=await call('/api/whatsapp/pair');
     note('WhatsApp Fresh Pair ✅',formatPair(pair),false);
   }
-  async function run(a){
+  async function run(a,button){
     const title=a[1], path=a[2], cmd=a[3];
+    setBtnLoading(button,true);
+    note(title+' ⏳','Akce spuštěná…',false);
     try{
       if(path==='fresh-wa'){await freshPair();return;}
       let data;
@@ -66,13 +78,14 @@
       if(path.includes('/api/whatsapp/pair')) note(title+' ✅',formatPair(data),false);
       else note(title+' ✅',formatGeneric(data),false);
     }catch(e){note(title+' ❌',e.message||String(e),true);}
+    finally{setBtnLoading(button,false);}
   }
   function btn(a,big){
     const el=document.createElement('button');
     el.type='button';
     el.className=big?'big-card':'act-btn';
     el.innerHTML='<span class="ico">'+a[0]+'</span><span><strong>'+a[1]+'</strong><small>Servisní akce Martybotu</small></span>';
-    el.addEventListener('click',()=>run(a));
+    el.addEventListener('click',()=>run(a,el));
     return el;
   }
   function mount(){
