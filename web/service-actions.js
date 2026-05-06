@@ -1,5 +1,6 @@
 (function(){
   const actions=[
+    ['🩺','Diagnostika','/api/diagnostics'],
     ['📨','Restart Telegram','/api/telegram/restart'],
     ['🔗','WhatsApp Pair Code','/api/whatsapp/pair'],
     ['🧼','WhatsApp Fresh Pair','fresh-wa'],
@@ -47,6 +48,7 @@
   function formatGeneric(data){
     if(Array.isArray(data?.replies)) return data.replies.join('\n\n');
     if(data?.reply) return data.reply;
+    if(data?.text) return data.text;
     return typeof data==='string'?data:JSON.stringify(data,null,2);
   }
   function setBtnLoading(el,on){
