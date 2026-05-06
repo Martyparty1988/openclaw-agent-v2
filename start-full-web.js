@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const BOOT_VERSION = 'martybot-telegram-menu-2026-05-06-v10-web-agent-sync';
+const BOOT_VERSION = 'martybot-telegram-menu-2026-05-06-v12-provider-sync-cockpit';
 const repoUrl = process.env.GIT_REPO_URL || 'https://github.com/Martyparty1988/openclaw-agent-v2.git';
 const branch = process.env.GIT_BRANCH || 'main';
 const workdir = process.env.AGENT_WORKDIR || '/tmp/martybot-workdir';
@@ -34,6 +34,15 @@ function isGitRepo(dir) {
   return fs.existsSync(path.join(dir, '.git'));
 }
 
+function safeRequire(file, label) {
+  try {
+    require(file);
+    console.log('[boot] loaded ' + label);
+  } catch (err) {
+    console.error('[boot] failed ' + label + ':', err && err.message || err);
+  }
+}
+
 function ensureWorkdir() {
   process.env.AGENT_WORKDIR = workdir;
   const authRepoUrl = withGitToken(repoUrl);
@@ -62,11 +71,28 @@ function ensureWorkdir() {
 }
 
 ensureWorkdir();
+
+try {
+  const sync = require('./ai-provider-sync');
+  sync.autoSyncFromEnv();
+  console.log('[boot] ai provider sync checked');
+} catch (err) {
+  console.error('[boot] ai provider sync failed:', err && err.message || err);
+}
+
 require('./telegram-env-check.js');
 require('./telegram-polling-guard.js');
 require('./telegram-menu.js');
 require('./openclaw-upstream.js');
 require('./shortcuts-upstream.js');
+
+safeRequire('./runtime-logs-endpoint.js', 'runtime logs endpoint');
+safeRequire('./web-safe-improve-endpoint.js', 'safe web improve endpoint');
+safeRequire('./diagnostics-endpoint.js', 'diagnostics endpoint');
+safeRequire('./doctor-endpoint.js', 'doctor endpoint');
+safeRequire('./git-push-test-endpoint.js', 'git push test endpoint');
+safeRequire('./git-pull-endpoint.js', 'safe git pull endpoint');
+
 require('./web-static-patch.js');
 require('./web-agent-sync-patch.js');
 require('./router-full-web.js');
