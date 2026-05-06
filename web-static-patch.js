@@ -19,10 +19,20 @@ function fileFor(url) {
   if (pathname === '/web/index.html') return path.join(webDir, 'index.modular.html');
   if (pathname === '/manifest.webmanifest') return path.join(webDir, 'manifest.webmanifest');
   if (pathname === '/icon.svg' || pathname === '/favicon.ico') return path.join(webDir, 'icon.svg');
-  if (['/styles.css','/app.js','/service-actions.js','/pro-ui.css','/pro-ui.js'].includes(pathname)) return path.join(webDir, pathname.slice(1));
+  if (['/styles.css','/app.js','/service-actions.js','/pro-ui.css','/pro-ui.js','/pro-polish.css','/pro-polish.js','/window-manager.css','/window-manager.js','/same-origin-only.css','/same-origin-only.js'].includes(pathname)) return path.join(webDir, pathname.slice(1));
   if (!pathname.startsWith('/web/')) return '';
   const clean = pathname.replace('/web/', '').replace(/\.\./g, '');
   return path.join(webDir, clean);
+}
+
+function injectSameOrigin(html) {
+  if (!html.includes('same-origin-only.css')) {
+    html = html.replace('</head>', '  <link rel="stylesheet" href="/web/same-origin-only.css">\n</head>');
+  }
+  if (!html.includes('same-origin-only.js')) {
+    html = html.replace('<script src="/web/app.js"></script>', '<script src="/web/same-origin-only.js"></script>\n  <script src="/web/app.js"></script>');
+  }
+  return html;
 }
 
 function sendFile(req, res) {
@@ -36,6 +46,10 @@ function sendFile(req, res) {
     'Cache-Control': ext === '.html' ? 'no-store' : 'public, max-age=3600'
   });
   if (req.method === 'HEAD') return res.end(), true;
+  if (ext === '.html') {
+    res.end(injectSameOrigin(fs.readFileSync(file, 'utf8')));
+    return true;
+  }
   fs.createReadStream(file).pipe(res);
   return true;
 }
@@ -49,4 +63,4 @@ http.createServer = function createServerWithWeb(options, listener) {
   return options === undefined ? originalCreateServer(wrapped) : originalCreateServer(options, wrapped);
 };
 
-console.log('Static Martybot modular web UI enabled on /');
+console.log('Static Martybot modular web UI enabled on / (same-origin mode)');
