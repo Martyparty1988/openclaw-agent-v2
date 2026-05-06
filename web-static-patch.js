@@ -77,6 +77,12 @@ http.createServer = function createServerWithWeb(options, listener) {
 };
 
 try {
+  require('./runtime-logs-endpoint.js');
+} catch (err) {
+  console.error('[web-static-patch] runtime logs endpoint failed:', err && err.message || err);
+}
+
+try {
   require('./web-safe-improve-endpoint.js');
 } catch (err) {
   console.error('[web-static-patch] safe improve endpoint failed:', err && err.message || err);
