@@ -2,6 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 
+try {
+  const sync = require('./ai-provider-sync');
+  sync.autoSyncFromEnv();
+} catch (err) {
+  console.error('[web-static-patch] ai provider sync failed:', err && err.message || err);
+}
+
 const originalCreateServer = http.createServer;
 
 function dirExists(dir) {
@@ -76,40 +83,11 @@ http.createServer = function createServerWithWeb(options, listener) {
   return options === undefined ? originalCreateServer(wrapped) : originalCreateServer(options, wrapped);
 };
 
-try {
-  require('./runtime-logs-endpoint.js');
-} catch (err) {
-  console.error('[web-static-patch] runtime logs endpoint failed:', err && err.message || err);
-}
-
-try {
-  require('./web-safe-improve-endpoint.js');
-} catch (err) {
-  console.error('[web-static-patch] safe improve endpoint failed:', err && err.message || err);
-}
-
-try {
-  require('./diagnostics-endpoint.js');
-} catch (err) {
-  console.error('[web-static-patch] diagnostics endpoint failed:', err && err.message || err);
-}
-
-try {
-  require('./doctor-endpoint.js');
-} catch (err) {
-  console.error('[web-static-patch] doctor endpoint failed:', err && err.message || err);
-}
-
-try {
-  require('./git-push-test-endpoint.js');
-} catch (err) {
-  console.error('[web-static-patch] git push test endpoint failed:', err && err.message || err);
-}
-
-try {
-  require('./git-pull-endpoint.js');
-} catch (err) {
-  console.error('[web-static-patch] git pull endpoint failed:', err && err.message || err);
-}
+try { require('./runtime-logs-endpoint.js'); } catch (err) { console.error('[web-static-patch] runtime logs endpoint failed:', err && err.message || err); }
+try { require('./web-safe-improve-endpoint.js'); } catch (err) { console.error('[web-static-patch] safe improve endpoint failed:', err && err.message || err); }
+try { require('./diagnostics-endpoint.js'); } catch (err) { console.error('[web-static-patch] diagnostics endpoint failed:', err && err.message || err); }
+try { require('./doctor-endpoint.js'); } catch (err) { console.error('[web-static-patch] doctor endpoint failed:', err && err.message || err); }
+try { require('./git-push-test-endpoint.js'); } catch (err) { console.error('[web-static-patch] git push test endpoint failed:', err && err.message || err); }
+try { require('./git-pull-endpoint.js'); } catch (err) { console.error('[web-static-patch] git pull endpoint failed:', err && err.message || err); }
 
 console.log('Static Martybot clean web UI enabled on / from ' + webDir);
