@@ -1,34 +1,37 @@
 {
+  "buildCommand": "echo 'Static Martybot web - no build needed'",
+  "installCommand": "echo 'No install needed for static web'",
+  "outputDirectory": ".",
   "cleanUrls": true,
   "trailingSlash": false,
   "redirects": [
     {
       "source": "/",
-      "destination": "/web/premium.html",
+      "destination": "/web/index.html",
       "permanent": false
     },
     {
       "source": "/web/",
-      "destination": "/web/premium.html",
+      "destination": "/web/index.html",
       "permanent": false
     }
   ],
   "rewrites": [
     {
       "source": "/app",
-      "destination": "/web/premium.html"
+      "destination": "/web/index.html"
     },
     {
       "source": "/dashboard",
-      "destination": "/web/premium.html"
+      "destination": "/web/index.html"
     },
     {
       "source": "/repair",
-      "destination": "/web/premium.html"
+      "destination": "/web/index.html"
     },
     {
       "source": "/settings",
-      "destination": "/web/premium.html"
+      "destination": "/web/index.html"
     }
   ],
   "headers": [
