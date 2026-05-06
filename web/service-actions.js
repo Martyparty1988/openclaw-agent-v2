@@ -6,7 +6,7 @@
     ['♻️','WhatsApp Reset','/api/whatsapp/reset'],
     ['⬇️','Git Pull','/api/chat','/git pull'],
     ['🦾','OpenClaw Pull','/api/openclaw/pull'],
-    ['✨','Web Improve','/api/web/improve?write=1'],
+    ['✨','Web Improve','/api/chat','/web improve'],
     ['🧠','Agent Reload','/api/chat','/agent reload']
   ];
   const $=id=>document.getElementById(id);
@@ -44,6 +44,11 @@
       'Zadej ideálně kód bez pomlčky a bez mezery. Platí jen poslední vygenerovaný kód.'
     ].join('\n');
   }
+  function formatGeneric(data){
+    if(Array.isArray(data?.replies)) return data.replies.join('\n\n');
+    if(data?.reply) return data.reply;
+    return typeof data==='string'?data:JSON.stringify(data,null,2);
+  }
   async function freshPair(){
     note('WhatsApp Fresh Pair ⏳','Resetuji session…',false);
     await call('/api/whatsapp/reset');
@@ -59,7 +64,7 @@
       let data;
       if(cmd){data=await call(path,{text:cmd,userId:'web_service'});}else{data=await call(path);}
       if(path.includes('/api/whatsapp/pair')) note(title+' ✅',formatPair(data),false);
-      else note(title+' ✅',typeof data==='string'?data:JSON.stringify(data,null,2),false);
+      else note(title+' ✅',formatGeneric(data),false);
     }catch(e){note(title+' ❌',e.message||String(e),true);}
   }
   function btn(a,big){
