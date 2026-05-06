@@ -50,7 +50,7 @@ const COMMANDS = {
   menu: ['menu', 'hlavni menu', 'hlavní menu'],
   agent: ['agent', 'agents', 'agent mode', 'režim agenta', 'rezim agenta', 'vyber agenta', 'výběr agenta'],
   git: ['git', 'git status', 'git setup', 'git pull', 'git push', 'repo'],
-  auto: ['auto', 'autonomně', 'autonomne', 'autonomie', 'autonomní režim', 'autonomni rezim'],
+  auto: ['auto', 'autonomně', 'autonomne', 'autonome', 'autonomie', 'autonomní režim', 'autonomni rezim'],
   model: ['model', 'models', 'přepni model', 'prepni model', 'jazykový model', 'jazykovy model'],
   email: ['email', 'mail', 'send email', 'pošli email', 'posli email', 'pošli mail', 'posli mail'],
   learn: ['learn', 'nauč se', 'nauc se', 'načti', 'nacti', 'ulož zdroj', 'uloz zdroj'],
@@ -83,6 +83,10 @@ function parseCommand(text) {
   if (lower === 'git' || lower.startsWith('git ')) return { command: 'git', task: normalized.slice(3).trim() };
   if (lower === 'auto' || lower.startsWith('auto ')) return { command: 'auto', task: normalized.slice(4).trim() };
   if (lower === 'agent' || lower.startsWith('agent ')) return { command: 'agent', task: normalized.slice(5).trim() };
+
+  if (lower.includes('autonom') && (lower.includes('vyleps') || lower.includes('zleps') || lower.includes('improv'))) {
+    return { command: 'improve', task: normalized };
+  }
 
   for (const [cmd, keywords] of Object.entries(COMMANDS)) {
     for (const kw of keywords) {
