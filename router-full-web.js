@@ -18,8 +18,10 @@ let waMode = 'booting';
 let waStarting = false;
 let waReady = false;
 let tgStarted = false;
+let tgStarting = false;
 let tgError = '';
 let tgBot = null;
+let tgInfo = null;
 let full = { enabled: false, error: '', meta: null, auto: null };
 let webImproveLast = '';
 
@@ -27,6 +29,8 @@ const startedAt = new Date().toISOString();
 const envFlag = (name) => String(process.env[name] || '').toLowerCase() === 'true';
 const digits = (value) => String(value || '').replace(/\D/g, '');
 const phoneNumber = () => digits(process.env.WA_PHONE_NUMBER || process.env.WHATSAPP_PHONE_NUMBER || process.env.PHONE_NUMBER || '');
+const telegramToken = () => String(process.env.TELEGRAM_TOKEN || process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || '').trim();
+const telegramEnabled = () => Boolean(telegramToken() && !envFlag('DISABLE_TELEGRAM'));
 const authDir = () => process.env.WA_AUTH_DIR || './wa_auth';
 const allowedTelegramIds = () => String(process.env.ALLOWED_TELEGRAM_CHAT_IDS || process.env.ALLOWED_USER_IDS || '').split(',').map(x => x.trim()).filter(Boolean);
 const chunkText = (text, size = 3800) => {
@@ -102,8 +106,12 @@ function statusPayload() {
     webSelfImprove: true,
     webSelfImproveWrite: envFlag('ALLOW_WEB_SELF_IMPROVE_WRITE') || envFlag('ALLOW_AGENT_WRITE'),
     webImproveLast,
-    telegram: Boolean(process.env.TELEGRAM_TOKEN && !envFlag('DISABLE_TELEGRAM')),
+    telegram: telegramEnabled(),
+    telegramTokenConfigured: Boolean(telegramToken()),
     telegramStarted: tgStarted,
+    telegramStarting: tgStarting,
+    telegramUsername: tgInfo?.username || '',
+    telegramId: tgInfo?.id || '',
     telegramError: tgError,
     whatsapp: Boolean(phoneNumber() && envFlag('ENABLE_WHATSAPP')),
     whatsappPhoneConfigured: Boolean(phoneNumber()),
@@ -262,14 +270,15 @@ function execGit(args, timeout = 10000) {
 }
 async function gitStatus() { const branch = await execGit(['rev-parse', '--abbrev-ref', 'HEAD']); const short = await execGit(['status', '--short']); return ['🧩 Git status', 'Branch: ' + (branch.stdout || 'unknown'), short.stdout ? short.stdout.slice(0,1200) : 'Working tree čistý ✅'].join('\n'); }
 async function gitPull() { if (!envFlag('ALLOW_GIT_PULL') && !envFlag('ALLOW_AGENT_WRITE')) return 'Git pull je vypnutý. Nastav ALLOW_GIT_PULL=true.'; const res = await execGit(['pull', '--ff-only'], 30000); return '⬇️ Git pull\n' + (res.stdout || res.stderr || res.error || 'Hotovo.'); }
-function formatStatus() { const s = statusPayload(); return ['✅ Martybot FULL router běží','Mode: '+s.mode,'Full agents: '+(s.fullAgents?'ON':'OFF'),s.fullAgentsError?'Agent error: '+s.fullAgentsError:'','Provider: '+s.provider,'Model: '+s.model,'AI: '+(s.aiAvailable?'ON':'OFF'),'Telegram: '+(s.telegramStarted?'ON':'OFF'),'WhatsApp: '+s.whatsappMode,'Socket ready: '+s.whatsappSocketReady,'Connected: '+s.whatsappConnected,'Web self-improve: ON','Write mode: '+(s.webSelfImproveWrite?'ON':'OFF')].filter(Boolean).join('\n'); }
+function formatStatus() { const s = statusPayload(); return ['✅ Martybot FULL router běží','Mode: '+s.mode,'Full agents: '+(s.fullAgents?'ON':'OFF'),s.fullAgentsError?'Agent error: '+s.fullAgentsError:'','Provider: '+s.provider,'Model: '+s.model,'AI: '+(s.aiAvailable?'ON':'OFF'),'Telegram: '+(s.telegramStarted?'ON':'OFF'),s.telegramUsername?'Telegram bot: @'+s.telegramUsername:'',s.telegramError?'Telegram error: '+s.telegramError:'','WhatsApp: '+s.whatsappMode,'Socket ready: '+s.whatsappSocketReady,'Connected: '+s.whatsappConnected,'Web self-improve: ON','Write mode: '+(s.webSelfImproveWrite?'ON':'OFF')].filter(Boolean).join('\n'); }
 async function handleWithFullAgent(text, platform, userId) { if (!full.enabled || !full.meta || typeof full.meta.handle !== 'function') return null; const replies = []; const reply = async (msg) => chunkText(msg).forEach(p => replies.push(p)); await full.meta.handle({ userId: userId || platform + '_user', platform, text, reply }); return replies.join('\n') || 'Hotovo.'; }
 async function handleCommandOrAI(text, platform = 'web', userId = 'web_user') {
   const raw = String(text || '').trim(); const cmd = raw.toLowerCase();
   if (!raw) return 'Prázdná zpráva.';
-  if (cmd === '/start' || cmd === '/help') return ['Martybot FULL ✅','','Příkazy:','/status','/git','/git pull','/wa pair','/wa reset','/web improve','/web improve write','/agent reload'].join('\n');
-  if (cmd === '/status' || cmd === '/wa status') return formatStatus();
+  if (cmd === '/start' || cmd === '/help') return ['Martybot FULL ✅','','Příkazy:','/status','/git','/git pull','/tg restart','/wa pair','/wa reset','/web improve','/web improve write','/agent reload'].join('\n');
+  if (cmd === '/status' || cmd === '/wa status' || cmd === '/tg status' || cmd === '/telegram status') return formatStatus();
   if (cmd === '/agent reload') { await loadFullAgents(); return formatStatus(); }
+  if (cmd === '/tg restart' || cmd === '/telegram restart') { await restartTelegram(); return formatStatus(); }
   if (cmd === '/git') return await gitStatus();
   if (cmd === '/git pull' || cmd === '/pull') return await gitPull();
   if (cmd === '/web improve' || cmd === '/self improve web' || cmd === '/improve web') return await runWebImprove(false);
@@ -279,15 +288,82 @@ async function handleCommandOrAI(text, platform = 'web', userId = 'web_user') {
   try { const fullOut = await handleWithFullAgent(raw, platform, userId); if (fullOut) return fullOut; } catch (e) { return 'Chyba původního agenta: ' + (e.message || String(e)); }
   try { return await aiReplyFallback(raw); } catch (e) { return 'AI chyba: ' + (e.message || String(e)); }
 }
-async function startTelegram() {
-  if (envFlag('DISABLE_TELEGRAM') || !process.env.TELEGRAM_TOKEN) { tgStarted = false; tgError = envFlag('DISABLE_TELEGRAM') ? 'disabled' : 'missing token'; return; }
-  try { const TelegramBot = require('node-telegram-bot-api'); tgBot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true }); try { await tgBot.deleteWebHook({ drop_pending_updates: false }); } catch {}
-    tgStarted = true; tgError = '';
-    tgBot.on('message', async (msg) => { const chatId = String(msg.chat.id); const text = String(msg.text || '').trim(); const allow = allowedTelegramIds(); if (allow.length && !allow.includes(chatId) && !allow.includes('tg_'+chatId)) { await tgBot.sendMessage(chatId,'🚫 Chat není v allowlistu. ID: '+chatId); return; } try { const out = await handleCommandOrAI(text,'telegram','tg_'+chatId); for (const part of chunkText(out,3900)) await tgBot.sendMessage(chatId,part,{disable_web_page_preview:true}); } catch(e){ await tgBot.sendMessage(chatId,'Chyba: '+(e.message||String(e))); } });
-    tgBot.on('polling_error', (e) => { tgError = e.message || String(e); console.error('Telegram polling error:', tgError); }); console.log('✅ Telegram FULL started.');
-  } catch (e) { tgStarted = false; tgError = e.message || String(e); console.error('Telegram startup failed:', tgError); }
+
+async function stopTelegram() {
+  try {
+    if (tgBot && typeof tgBot.stopPolling === 'function') await tgBot.stopPolling({ cancel: true });
+  } catch (e) {
+    tgError = 'stopPolling: ' + (e.message || String(e));
+  }
+  tgBot = null;
+  tgInfo = null;
+  tgStarted = false;
 }
-function startHttp() { const port = Number(process.env.PORT || process.env.HTTP_PORT || 3000); http.createServer(async (req,res)=>{ if(req.method==='OPTIONS') return json(res,204,{}); const url = new URL(req.url,'http://'+(req.headers.host||'localhost')); try { if(['/','/health','/api/status','/api/whatsapp/status'].includes(url.pathname)){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); return json(res,200,statusPayload()); } if(url.pathname==='/api/whatsapp/pair'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); return json(res,200,{ok:true,...(await requestPairingCode())}); } if(url.pathname==='/api/whatsapp/reset'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); return json(res,200,{ok:true,...(await resetWhatsAppSession())}); } if(url.pathname==='/api/web/improve'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); const write = url.searchParams.get('write')==='1'; return json(res,200,{ok:true,reply:await runWebImprove(write)}); } if(url.pathname==='/api/chat'&&req.method==='POST'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); const body=await readJson(req); const reply=await handleCommandOrAI(String(body.text||body.message||''),'web',String(body.userId||'web_user')); return json(res,200,{ok:true,replies:chunkText(reply)}); } return json(res,404,{ok:false,error:'Not found',path:url.pathname}); } catch(e){ return json(res,500,{ok:false,error:e.message||String(e),status:statusPayload()}); } }).listen(port,'0.0.0.0',()=>console.log('🌐 HTTP API listening on 0.0.0.0:'+port+' router-full-web')); }
+
+async function startTelegram() {
+  if (tgStarting) return;
+  const token = telegramToken();
+  if (envFlag('DISABLE_TELEGRAM') || !token) {
+    tgStarted = false;
+    tgInfo = null;
+    tgError = envFlag('DISABLE_TELEGRAM') ? 'disabled' : 'missing token. Set TELEGRAM_TOKEN or TELEGRAM_BOT_TOKEN';
+    console.log('Telegram disabled/not configured:', tgError);
+    return;
+  }
+  tgStarting = true;
+  try {
+    const TelegramBot = require('node-telegram-bot-api');
+
+    // Important: create the bot with polling disabled, remove any webhook first,
+    // then start polling. Starting polling before deleteWebHook can make Telegram
+    // getUpdates fail when the bot previously used a webhook.
+    tgBot = new TelegramBot(token, { polling: false });
+    try { await tgBot.deleteWebHook({ drop_pending_updates: false }); } catch (e) { console.warn('Telegram deleteWebHook warning:', e.message || e); }
+    tgInfo = await tgBot.getMe();
+
+    tgBot.on('message', async (msg) => {
+      const chatId = String(msg.chat.id);
+      const text = String(msg.text || '').trim();
+      const allow = allowedTelegramIds();
+      if (allow.length && !allow.includes(chatId) && !allow.includes('tg_' + chatId)) {
+        await tgBot.sendMessage(chatId, '🚫 Chat není v allowlistu. ID: ' + chatId);
+        return;
+      }
+      try {
+        const out = await handleCommandOrAI(text, 'telegram', 'tg_' + chatId);
+        for (const part of chunkText(out, 3900)) await tgBot.sendMessage(chatId, part, { disable_web_page_preview: true });
+      } catch (e) {
+        await tgBot.sendMessage(chatId, 'Chyba: ' + (e.message || String(e)));
+      }
+    });
+
+    tgBot.on('polling_error', (e) => {
+      tgError = e.message || String(e);
+      console.error('Telegram polling error:', tgError);
+      if (/409|ETELEGRAM.*Conflict|terminated by other getUpdates/i.test(tgError)) {
+        console.error('Telegram conflict: another instance is polling this bot token. Stop the duplicate deployment/process.');
+      }
+    });
+
+    await tgBot.startPolling({ restart: true });
+    tgStarted = true;
+    tgError = '';
+    console.log('✅ Telegram FULL started as @' + (tgInfo.username || 'unknown'));
+  } catch (e) {
+    tgStarted = false;
+    tgError = e.message || String(e);
+    console.error('Telegram startup failed:', tgError);
+  } finally {
+    tgStarting = false;
+  }
+}
+
+async function restartTelegram() {
+  await stopTelegram();
+  await startTelegram();
+  return { restarted: tgStarted, status: statusPayload() };
+}
+function startHttp() { const port = Number(process.env.PORT || process.env.HTTP_PORT || 3000); http.createServer(async (req,res)=>{ if(req.method==='OPTIONS') return json(res,204,{}); const url = new URL(req.url,'http://'+(req.headers.host||'localhost')); try { if(['/','/health','/api/status','/api/whatsapp/status','/api/telegram/status'].includes(url.pathname)){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); return json(res,200,statusPayload()); } if(url.pathname==='/api/telegram/restart'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); return json(res,200,{ok:true,...(await restartTelegram())}); } if(url.pathname==='/api/whatsapp/pair'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); return json(res,200,{ok:true,...(await requestPairingCode())}); } if(url.pathname==='/api/whatsapp/reset'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); return json(res,200,{ok:true,...(await resetWhatsAppSession())}); } if(url.pathname==='/api/web/improve'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); const write = url.searchParams.get('write')==='1'; return json(res,200,{ok:true,reply:await runWebImprove(write)}); } if(url.pathname==='/api/chat'&&req.method==='POST'){ if(!authOk(req)) return json(res,401,{ok:false,error:'Unauthorized'}); const body=await readJson(req); const reply=await handleCommandOrAI(String(body.text||body.message||''),'web',String(body.userId||'web_user')); return json(res,200,{ok:true,replies:chunkText(reply)}); } return json(res,404,{ok:false,error:'Not found',path:url.pathname}); } catch(e){ return json(res,500,{ok:false,error:e.message||String(e),status:statusPayload()}); } }).listen(port,'0.0.0.0',()=>console.log('🌐 HTTP API listening on 0.0.0.0:'+port+' router-full-web')); }
 
 console.log('🚀 router-full-web starting');
 startHttp();
