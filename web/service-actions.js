@@ -6,7 +6,7 @@
     ['♻️','WhatsApp Reset','/api/whatsapp/reset'],
     ['⬇️','Git Pull','/api/chat','/git pull'],
     ['🦾','OpenClaw Pull','/api/openclaw/pull'],
-    ['✨','Web Improve','/api/chat','/web improve'],
+    ['✨','Web Improve','/api/web/improve-safe'],
     ['🧠','Agent Reload','/api/chat','/agent reload']
   ];
   const $=id=>document.getElementById(id);
