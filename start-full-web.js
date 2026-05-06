@@ -6,10 +6,14 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+const BOOT_VERSION = 'martybot-web-ui-2026-05-06-v3';
 const DEFAULT_REPO = 'https://github.com/Martyparty1988/openclaw-agent-v2.git';
 const repoUrl = process.env.GIT_REPO_URL || DEFAULT_REPO;
 const branch = process.env.GIT_BRANCH || 'main';
 const workdir = process.env.AGENT_WORKDIR || '/tmp/martybot-workdir';
+
+console.log('[boot] ' + BOOT_VERSION);
+console.log('[boot] app snapshot dir=' + __dirname);
 
 function mask(url) {
   return String(url || '').replace(/(https:\/\/)([^@]+)@/i, '$1***@');
@@ -53,7 +57,8 @@ function ensureWorkdir() {
     }
 
     const currentBranch = run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workdir }).trim();
-    console.log('[git-bootstrap] ready. branch=' + currentBranch + ' workdir=' + workdir);
+    const currentCommit = run('git', ['rev-parse', '--short', 'HEAD'], { cwd: workdir }).trim();
+    console.log('[git-bootstrap] ready. branch=' + currentBranch + ' commit=' + currentCommit + ' workdir=' + workdir);
   } catch (err) {
     console.error('[git-bootstrap] failed:', err.message || err);
     console.error('[git-bootstrap] continuing with app snapshot. /git may show branch unknown.');
