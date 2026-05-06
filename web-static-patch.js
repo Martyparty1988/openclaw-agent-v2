@@ -15,10 +15,11 @@ const types = {
 
 function fileFor(url) {
   const pathname = new URL(url || '/', 'http://localhost').pathname;
-  if (pathname === '/' || pathname === '/web' || pathname === '/web/') return path.join(webDir, 'index.html');
+  if (pathname === '/' || pathname === '/web' || pathname === '/web/') return path.join(webDir, 'index.modular.html');
+  if (pathname === '/web/index.html') return path.join(webDir, 'index.modular.html');
   if (pathname === '/manifest.webmanifest') return path.join(webDir, 'manifest.webmanifest');
   if (pathname === '/icon.svg' || pathname === '/favicon.ico') return path.join(webDir, 'icon.svg');
-  if (pathname === '/service-actions.js') return path.join(webDir, 'service-actions.js');
+  if (['/styles.css','/app.js','/service-actions.js','/pro-ui.css','/pro-ui.js'].includes(pathname)) return path.join(webDir, pathname.slice(1));
   if (!pathname.startsWith('/web/')) return '';
   const clean = pathname.replace('/web/', '').replace(/\.\./g, '');
   return path.join(webDir, clean);
@@ -35,14 +36,6 @@ function sendFile(req, res) {
     'Cache-Control': ext === '.html' ? 'no-store' : 'public, max-age=3600'
   });
   if (req.method === 'HEAD') return res.end(), true;
-  if (ext === '.html') {
-    let html = fs.readFileSync(file, 'utf8');
-    if (!html.includes('service-actions.js')) {
-      html = html.replace('</body>', '<script src="/web/service-actions.js"></script></body>');
-    }
-    res.end(html);
-    return true;
-  }
   fs.createReadStream(file).pipe(res);
   return true;
 }
@@ -56,4 +49,4 @@ http.createServer = function createServerWithWeb(options, listener) {
   return options === undefined ? originalCreateServer(wrapped) : originalCreateServer(options, wrapped);
 };
 
-console.log('Static Martybot web UI enabled on /');
+console.log('Static Martybot modular web UI enabled on /');
