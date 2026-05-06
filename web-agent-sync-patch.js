@@ -2,6 +2,16 @@
 // Makes long-running agent commands return their full result through the Web API.
 // Telegram can stream follow-up replies later, but HTTP needs the whole answer before the response closes.
 
+const path = require('path');
+
+function configureWebDir() {
+  const workdir = String(process.env.AGENT_WORKDIR || '').trim();
+  if (!process.env.WEB_DIR && workdir) {
+    process.env.WEB_DIR = path.join(workdir, 'web');
+    console.log('[web-agent-sync-patch] WEB_DIR=' + process.env.WEB_DIR);
+  }
+}
+
 function friendlyAgentError(err) {
   const raw = [err && err.message, err && err.stack].filter(Boolean).join('\n');
   const lower = raw.toLowerCase();
@@ -58,6 +68,7 @@ async function runAndCollect({ title, runner, reply }) {
 }
 
 try {
+  configureWebDir();
   const MetaAgent = require('./meta-agent-v2');
   if (MetaAgent && MetaAgent.prototype && !MetaAgent.prototype.__martybotWebSyncPatch) {
     const originalHandle = MetaAgent.prototype.handle;
