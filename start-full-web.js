@@ -61,4 +61,5 @@ function ensureWorkdir() {
 }
 
 ensureWorkdir();
+require('./web-static-patch.js');
 require('./router-full-web.js');
