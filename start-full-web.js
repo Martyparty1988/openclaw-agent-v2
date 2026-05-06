@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const BOOT_VERSION = 'martybot-web-ui-2026-05-06-v3';
+const BOOT_VERSION = 'martybot-web-ui-2026-05-06-v4';
 const DEFAULT_REPO = 'https://github.com/Martyparty1988/openclaw-agent-v2.git';
 const repoUrl = process.env.GIT_REPO_URL || DEFAULT_REPO;
 const branch = process.env.GIT_BRANCH || 'main';
@@ -66,5 +66,6 @@ function ensureWorkdir() {
 }
 
 ensureWorkdir();
+require('./telegram-env-check.js');
 require('./web-static-patch.js');
 require('./router-full-web.js');
