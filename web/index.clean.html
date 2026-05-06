@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#060d09">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Martybot">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <title>Martybot</title>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top" role="banner">
+    <div class="hero">
+      <div class="brand">
+        <div class="avatar" id="avatar" aria-label="Status robota">🤖</div>
+        <div class="brand-text"><h1>Martybot</h1><p id="subtitle">Osobní AI agent · Railway same-origin</p></div>
+      </div>
+      <button class="status-pill warn" id="topStatus" aria-live="polite">Kontroluji…</button>
+    </div>
+    <div class="stats" role="region" aria-label="Statistiky připojení">
+      <div class="stat primary"><small>🔌 Backend</small><b id="statBackend">—</b></div>
+      <div class="stat"><small>🧠 Model</small><b id="statModel">—</b></div>
+      <div class="stat"><small>⚙️ Provider</small><b id="statProvider">—</b></div>
+      <div class="stat"><small>🤖 Auto</small><b id="statAuto">—</b></div>
+    </div>
+    <div id="wmSwitcher" class="wm-switcher desktop-only" role="toolbar" aria-label="Panely"></div>
+  </header>
+  <main>
+    <section id="view-chat" class="view active desktop-stack" aria-label="Chat">
+      <div class="layout">
+        <article class="panel chat-panel">
+          <div class="panel-head"><h2>Chat</h2><div class="head-btns"><button class="ghost-btn" id="refreshBtn">Stav</button><button class="ghost-btn" id="clearBtn">Smazat</button></div></div>
+          <div class="messages" id="messages" role="log" aria-live="polite" aria-label="Zprávy"><div class="msg-wrap sys"><div class="msg">Martybot běží na stejné doméně jako backend. Zkus <kbd>/status</kbd></div></div></div>
+          <div class="typing-wrap" id="typing" aria-hidden="true"><span>Martybot píše</span><div class="t-dots"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div></div>
+          <div class="suggestions" id="suggestions" role="list" aria-label="Rychlé příkazy">
+            <button class="sugg-btn" data-cmd="/status">📡 Stav</button><button class="sugg-btn" data-cmd="/facts">🧠 Paměť</button><button class="sugg-btn" data-fill="/remember ">📝 Poznámka</button><button class="sugg-btn" data-cmd="/model openrouter free">🆓 Free model</button><button class="sugg-btn" data-cmd="/auto run">🤖 Auto audit</button><button class="sugg-btn" data-cmd="/git">🧩 Git</button><button class="sugg-btn" data-cmd="/help">❓ Help</button>
+          </div>
+          <div class="composer" role="form" aria-label="Napsat zprávu"><textarea class="composer-ta" id="textInput" rows="1" placeholder="Napiš zprávu nebo příkaz…" aria-label="Zpráva" autocomplete="off" autocorrect="off" spellcheck="false"></textarea><button class="mic-btn" id="micBtn" title="Diktovat (cs-CZ)" aria-label="Mikrofon">🎙️</button><button class="send-btn" id="sendBtn" aria-label="Odeslat">Odeslat</button></div>
+        </article>
+        <aside class="panel sidebar desktop-only" aria-label="Sidebar">
+          <div class="sblock"><h2>Servisní akce</h2><div class="act-grid" id="desktopActions"></div></div>
+          <div class="sblock"><h2>Modely</h2><div class="mdl-list" id="desktopModels"></div></div>
+          <div class="sblock"><h2>Stav spojení</h2><div class="st-rows" id="statusList"></div></div>
+        </aside>
+      </div>
+    </section>
+    <section id="view-actions" class="view mobile-only actions-pg" aria-label="Servisní akce"><p class="sec-title">Servisní akce</p><div class="big-grid" id="bigActions"></div><p class="sec-title">Šablony</p><div class="tmpls" id="templateList"></div></section>
+    <section id="view-dashboard" class="view mobile-only dashboard-pg" aria-label="Dashboard"><div class="page-card"><p class="sec-title" style="margin-top:0">Dashboard</p><div class="dashboard-grid"><div class="metric"><small>Režim</small><b id="dashMode">—</b></div><div class="metric"><small>Nástroje</small><b id="dashTools">—</b></div><div class="metric"><small>Paměť</small><b id="dashMemory">—</b></div><div class="metric"><small>Poslední test</small><b id="dashLast">—</b></div></div></div><div class="page-card"><p class="sec-title" style="margin-top:0">Stav spojení</p><div class="st-rows" id="statusListDashboard"></div></div></section>
+    <section id="view-repair" class="view mobile-only repair-pg" aria-label="Diagnostika"><div class="page-card"><p class="sec-title" style="margin-top:0">Diagnostika</p><div class="fstack"><button class="primary-btn" data-cmd="/status">Spustit /status</button><button class="ghost-btn btn-full" id="diagAutoBtn">Diagnostika</button><button class="ghost-btn btn-full" data-cmd="/git setup">Git setup</button><button class="ghost-btn btn-full" data-cmd="/auto run">Auto audit</button></div></div></section>
+    <section id="view-settings" class="view mobile-only settings-pg" aria-label="Nastavení"><div class="page-card install-tip" id="installTip"><p class="sec-title" style="margin-top:0">📲 Přidat na plochu</p><p class="hint">V Safari klepni Sdílet → Přidat na plochu.</p></div><div class="page-card"><p class="sec-title" style="margin-top:0">Modely</p><div class="mdl-list" id="mobileModels"></div></div><div class="page-card"><p class="sec-title" style="margin-top:0">Stav spojení</p><div class="st-rows" id="statusListMobile"></div></div><div class="page-card"><p class="sec-title" style="margin-top:0">UI nastavení</p><div class="toggle-row"><div class="tgl-label"><strong>Vibrace tlačítek</strong><p>Krátká haptická odezva na mobilu.</p></div><button class="switch" id="hapticSwitch" role="switch" aria-checked="true"></button></div><div class="toggle-row"><div class="tgl-label"><strong>Ukládat chat</strong><p>Pouze lokálně v prohlížeči.</p></div><button class="switch" id="saveChatSwitch" role="switch" aria-checked="true"></button></div></div></section>
+  </main>
+</div>
+<div id="toasts" aria-live="assertive" aria-atomic="true"></div>
+<nav class="tabbar" role="navigation" aria-label="Navigace"><button class="active" data-tab="chat"><b>💬</b>Chat</button><button data-tab="actions"><b>⚡</b>Akce</button><button data-tab="dashboard"><b>📊</b>Dash</button><button data-tab="repair"><b>🛠️</b>Servis</button><button data-tab="settings"><b>⚙️</b>Nast.</button></nav>
+<script src="same-origin-only.js"></script>
+<script src="app.js"></script>
+<script src="service-actions.js"></script>
+<script src="martybot-pro.js"></script>
+<script src="window-manager.js"></script>
+</body>
+</html>
