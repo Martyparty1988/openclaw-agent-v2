@@ -2,6 +2,7 @@
   const actions=[
     ['📨','Restart Telegram','/api/telegram/restart'],
     ['🔗','WhatsApp Pair Code','/api/whatsapp/pair'],
+    ['🧼','WhatsApp Fresh Pair','fresh-wa'],
     ['♻️','WhatsApp Reset','/api/whatsapp/reset'],
     ['⬇️','Git Pull','/api/chat','/git pull'],
     ['🦾','OpenClaw Pull','/api/openclaw/pull'],
@@ -13,6 +14,7 @@
   const base=()=>String(localStorage.getItem('martybotBackendUrl')||'').trim().replace(/\/+$/,'');
   const tok=()=>String(localStorage.getItem('martybotWebToken')||'').trim();
   const hdr=json=>{const h={}; if(json)h['Content-Type']='application/json'; if(tok())h['X-Agent-Token']=tok(); return h;};
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
   function note(title,body,bad){
     const box=$('messages');
     if(!box){alert(title+'\n\n'+String(body||''));return;}
@@ -23,18 +25,41 @@
     msg.innerHTML='<strong>'+esc(title)+'</strong><pre><code>'+esc(String(body||'').slice(0,5000))+'</code></pre>';
     wrap.appendChild(msg); box.appendChild(wrap); box.scrollTop=box.scrollHeight;
   }
+  async function call(path,json){
+    const r=await fetch(base()+path,{method:'POST',headers:hdr(!!json),body:json?JSON.stringify(json):undefined});
+    const t=await r.text(); let data; try{data=JSON.parse(t)}catch{data=t}
+    if(!r.ok)throw new Error(typeof data==='string'?data:JSON.stringify(data,null,2));
+    return data;
+  }
+  function formatPair(data){
+    const code=String(data.code||data.raw||'').trim();
+    const raw=String(data.raw||code).replace(/[^a-zA-Z0-9]/g,'').toUpperCase();
+    const phone=data.phoneNumber||data.status?.whatsappPhoneLast4||'';
+    return [
+      'Telefon: '+phone,
+      'Kód bez pomlčky: '+raw,
+      'Kód s pomlčkou: '+code,
+      '',
+      'Použij WhatsApp → Propojená zařízení → Propojit pomocí telefonního čísla.',
+      'Zadej ideálně kód bez pomlčky a bez mezery. Platí jen poslední vygenerovaný kód.'
+    ].join('\n');
+  }
+  async function freshPair(){
+    note('WhatsApp Fresh Pair ⏳','Resetuji session…',false);
+    await call('/api/whatsapp/reset');
+    note('WhatsApp Fresh Pair ⏳','Čekám 15 sekund na nový socket…',false);
+    await wait(15000);
+    const pair=await call('/api/whatsapp/pair');
+    note('WhatsApp Fresh Pair ✅',formatPair(pair),false);
+  }
   async function run(a){
     const title=a[1], path=a[2], cmd=a[3];
     try{
-      let r;
-      if(cmd){
-        r=await fetch(base()+path,{method:'POST',headers:hdr(true),body:JSON.stringify({text:cmd,userId:'web_service'})});
-      }else{
-        r=await fetch(base()+path,{method:'POST',headers:hdr(false)});
-      }
-      const t=await r.text(); let data=t; try{data=JSON.stringify(JSON.parse(t),null,2)}catch{}
-      if(!r.ok)throw new Error(data);
-      note(title+' ✅',data,false);
+      if(path==='fresh-wa'){await freshPair();return;}
+      let data;
+      if(cmd){data=await call(path,{text:cmd,userId:'web_service'});}else{data=await call(path);}
+      if(path.includes('/api/whatsapp/pair')) note(title+' ✅',formatPair(data),false);
+      else note(title+' ✅',typeof data==='string'?data:JSON.stringify(data,null,2),false);
     }catch(e){note(title+' ❌',e.message||String(e),true);}
   }
   function btn(a,big){
