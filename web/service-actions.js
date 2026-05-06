@@ -1,5 +1,6 @@
 (function(){
   const actions=[
+    ['🧑‍⚕️','Doctor','/api/doctor'],
     ['🩺','Diagnostika','/api/diagnostics'],
     ['📜','Runtime Logs','/api/logs'],
     ['🧪','Git Test Push','/api/git/test-push'],
