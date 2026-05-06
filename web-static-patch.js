@@ -3,7 +3,18 @@ const path = require('path');
 const http = require('http');
 
 const originalCreateServer = http.createServer;
-const webDir = path.join(__dirname, 'web');
+
+function dirExists(dir) {
+  try { return fs.existsSync(dir) && fs.statSync(dir).isDirectory(); } catch { return false; }
+}
+
+function pickWebDir() {
+  const workdirWeb = process.env.AGENT_WORKDIR ? path.join(process.env.AGENT_WORKDIR, 'web') : '';
+  if (workdirWeb && dirExists(workdirWeb)) return workdirWeb;
+  return path.join(__dirname, 'web');
+}
+
+const webDir = pickWebDir();
 const types = {
   '.html': 'text/html; charset=utf-8',
   '.webmanifest': 'application/manifest+json; charset=utf-8',
@@ -13,10 +24,22 @@ const types = {
   '.json': 'application/json; charset=utf-8'
 };
 
+function firstExisting(files) {
+  return files.find((file) => file && fs.existsSync(file) && fs.statSync(file).isFile()) || '';
+}
+
+function cleanPath(value) {
+  return String(value || '').replace('/web/', '').replace(/\.\./g, '').replace(/^\/+/, '');
+}
+
 function fileFor(url) {
   const pathname = new URL(url || '/', 'http://localhost').pathname;
   if (pathname === '/' || pathname === '/web' || pathname === '/web/' || pathname === '/web/index.html') {
-    return path.join(webDir, 'index.clean.html');
+    return firstExisting([
+      path.join(webDir, 'index.clean.html'),
+      path.join(webDir, 'index.html'),
+      path.join(webDir, 'premium.html')
+    ]);
   }
   if (pathname === '/manifest.webmanifest') return path.join(webDir, 'manifest.webmanifest');
   if (pathname === '/icon.svg' || pathname === '/favicon.ico') return path.join(webDir, 'icon.svg');
@@ -26,8 +49,7 @@ function fileFor(url) {
   ];
   if (rootFiles.includes(pathname)) return path.join(webDir, pathname.slice(1));
   if (!pathname.startsWith('/web/')) return '';
-  const clean = pathname.replace('/web/', '').replace(/\.\./g, '');
-  return path.join(webDir, clean);
+  return path.join(webDir, cleanPath(pathname));
 }
 
 function sendFile(req, res) {
@@ -54,4 +76,4 @@ http.createServer = function createServerWithWeb(options, listener) {
   return options === undefined ? originalCreateServer(wrapped) : originalCreateServer(options, wrapped);
 };
 
-console.log('Static Martybot clean web UI enabled on /');
+console.log('Static Martybot clean web UI enabled on / from ' + webDir);
