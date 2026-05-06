@@ -14,6 +14,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/web/styles.css">
   <link rel="stylesheet" href="/web/pro-ui.css">
+  <link rel="stylesheet" href="/web/pro-polish.css">
   <title>Martybot</title>
 </head>
 <body>
@@ -76,7 +77,7 @@
 
           <aside class="panel sidebar desktop-only">
             <div class="sblock">
-              <h2>Spojení</h2>
+              <div class="pro-card-title"><span>Spojení</span><em>Local browser config</em></div>
               <div class="fstack">
                 <input class="txt-in" id="backendInput" placeholder="https://tvoje-railway.up.railway.app">
                 <input class="txt-in" id="tokenInput" type="password" placeholder="WEB_API_TOKEN volitelně">
@@ -89,9 +90,9 @@
               <p class="hint">Na Railway většinou nech backend prázdný, appka pak volá stejnou doménu.</p>
             </div>
 
-            <div class="sblock"><h2>Servisní akce</h2><div class="act-grid" id="desktopActions"></div></div>
-            <div class="sblock"><h2>Modely</h2><div class="mdl-list" id="desktopModels"></div></div>
-            <div class="sblock"><h2>Detail spojení</h2><div class="st-rows" id="statusList"></div></div>
+            <div class="sblock"><div class="pro-card-title"><span>Servisní akce</span><em>one tap ops</em></div><div class="act-grid" id="desktopActions"></div></div>
+            <div class="sblock"><div class="pro-card-title"><span>Modely</span><em>LLM routing</em></div><div class="mdl-list" id="desktopModels"></div></div>
+            <div class="sblock"><div class="pro-card-title"><span>Detail spojení</span><em>live</em></div><div class="st-rows" id="statusList"></div></div>
           </aside>
         </div>
       </section>
@@ -153,5 +154,6 @@
   <script src="/web/app.js"></script>
   <script src="/web/service-actions.js"></script>
   <script src="/web/pro-ui.js"></script>
+  <script src="/web/pro-polish.js"></script>
 </body>
 </html>
