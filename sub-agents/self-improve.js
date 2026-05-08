@@ -15,8 +15,9 @@ const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
 const WORKDIR = path.resolve(process.env.AGENT_WORKDIR || process.cwd());
 
 const AGENT_FILES = [
-  'router.js',
-  'meta-agent.js',
+  'router-full-web.js',
+  'meta-agent-v2.js',
+  'start-full-web.js',
   'sub-agents/planner.js',
   'sub-agents/executor.js',
   'sub-agents/memory.js',
@@ -193,7 +194,7 @@ async function runTests(onStep) {
   const commands = [
     'npm run check --if-present',
     'node --check router.js',
-    'node --check meta-agent.js',
+    'node --check meta-agent-v2.js',
     'node --check sub-agents/executor.js',
     'node --check sub-agents/memory.js',
     'node --check sub-agents/self-improve.js',

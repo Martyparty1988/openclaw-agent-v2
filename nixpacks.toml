@@ -5,4 +5,4 @@ nixPkgs = ["nodejs_20", "npm-9_x", "git"]
 cmds = ["npm install"]
 
 [start]
-cmd = "node router-full-web.js"
+cmd = "node start-full-web.js"
