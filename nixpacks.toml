@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm-9_x", "git"]
+
+[phases.install]
+cmds = ["npm install"]
+
+[start]
+cmd = "node start-full-web.js"
