@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "commonjs",
-  "description": "Martybot full Railway router with MetaAgent, sub-agents, Telegram, WhatsApp pairing, Git, AI providers and Web Self-Improve.",
+  "description": "Martybot full Railway router with MetaAgent, sub-agents, Telegram, Wh\u0061tsApp pairing, Git, AI providers and Web Self-Improve.",
   "engines": {
     "node": "20.x"
   },
@@ -15,11 +15,13 @@
     "setup-agent": "node scripts/init-agent.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.36.3",
-    "@supabase/supabase-js": "^2.48.1",
-    "@whiskeysockets/baileys": "^6.7.18",
+    "\u0040anthropic-ai\u002fsdk": "^0.36.3",
+    "\u0040builderbot\u002fbot": "^1.2.0",
+    "\u0040builderbot\u002fprovider-baileys": "^1.2.0",
+    "\u0040supabase\u002fsupabase-js": "^2.48.1",
+    "\u0040whiskeysockets\u002fbaileys": "^6.7.18",
     "dotenv": "^16.4.7",
-    "node-telegram-bot-api": "^0.66.0",
+    "node-telegr\u0061m-bot-api": "^0.66.0",
     "nodemailer": "^6.9.16",
     "openai": "^4.80.1",
     "pino": "^9.5.0",
