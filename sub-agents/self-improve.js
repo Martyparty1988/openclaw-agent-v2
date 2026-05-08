@@ -1,46 +1,128 @@
 // sub-agents/self-improve.js
-// The agent that reads its own source code, finds improvements,
-// refactors, runs tests, and commits to GitHub.
+// Safe self-improve cycle: read code, propose fixes with Claude, apply locally,
+// test, then commit/push only when AGENT_WORKDIR is a real git repository.
+// Secrets stay in Railway Variables. This file never stores API keys or tokens.
 
 const Anthropic = require('@anthropic-ai/sdk');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const util = require('util');
 
 const execAsync = util.promisify(exec);
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-4-5';
+const execFileAsync = util.promisify(execFile);
+const MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
+const WORKDIR = path.resolve(process.env.AGENT_WORKDIR || process.cwd());
 
-// Files the agent is allowed to read and potentially improve
 const AGENT_FILES = [
-  'router.js',
-  'meta-agent.js',
+  'router-full-web.js',
+  'meta-agent-v2.js',
+  'start-full-web.js',
   'sub-agents/planner.js',
   'sub-agents/executor.js',
   'sub-agents/memory.js',
   'sub-agents/self-improve.js',
+  'sub-agents/web-improve.js',
+  'sub-agents/email.js',
+  'sub-agents/learner.js',
+  'sub-agents/model-presets.js',
+  'sub-agents/git-workspace.js',
+  'sub-agents/auto-worker.js',
+  'scripts/ensure-git-workdir.js',
 ];
 
-const WORKDIR = process.env.AGENT_WORKDIR || process.cwd();
+function getAnthropicClient() {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is missing. Self-improve requires Claude/Anthropic.');
+  }
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+}
 
-// ─── Step 1: Analyze ─────────────────────────────────────────────────────────
+function safePath(file) {
+  const full = path.resolve(WORKDIR, file);
+  if (!full.startsWith(WORKDIR)) throw new Error(`Unsafe file path rejected: ${file}`);
+  return full;
+}
 
-async function analyzeCode(onStep) {
+async function isGitRepo() {
+  try {
+    await fs.access(path.join(WORKDIR, '.git'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function makeAskPass() {
+  const dir = '/tmp/martybot-git';
+  const file = path.join(dir, 'askpass.sh');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(file, [
+    '#!/bin/sh',
+    'case "$1" in',
+    '  *Username*) echo "x-access-token" ;;',
+    '  *Password*) echo "$GIT_TOKEN" ;;',
+    '  *) echo "" ;;',
+    'esac',
+    '',
+  ].join('\n'), 'utf-8');
+  await fs.chmod(file, 0o700);
+  return file;
+}
+
+async function runGit(args, timeout = 60000) {
+  const env = {
+    ...process.env,
+    GIT_TERMINAL_PROMPT: '0',
+  };
+
+  if (process.env.GIT_TOKEN) {
+    env.GIT_ASKPASS = await makeAskPass();
+  }
+
+  return execFileAsync('git', ['-C', WORKDIR, ...args], {
+    env,
+    timeout,
+    maxBuffer: 1024 * 1024,
+  });
+}
+
+function explainGitSetup() {
+  return [
+    '⚠️ Git push není aktivní, protože pracovní složka není skutečný git repozitář nebo chybí remote.',
+    '',
+    'Bezpečné nastavení pro Railway:',
+    '1. Tajné hodnoty nech pouze v Railway Variables.',
+    '2. Nastav AGENT_WORKDIR=/data/openclaw-agent-v2.',
+    '3. Nastav GITHUB_REPO=Martyparty1988/openclaw-agent-v2.',
+    '4. Nastav GIT_BRANCH=main.',
+    '5. Nastav GIT_TOKEN s oprávněním Contents: Read and write.',
+    '6. Spusť /git setup.',
+    '',
+    `Aktuální AGENT_WORKDIR: ${WORKDIR}`,
+  ].join('\n');
+}
+
+async function readSourceFiles(onStep) {
   onStep('Čtu vlastní zdrojový kód...');
-
   const sources = {};
+
   for (const file of AGENT_FILES) {
     try {
-      const full = path.join(WORKDIR, file);
-      sources[file] = await fs.readFile(full, 'utf-8');
+      sources[file] = await fs.readFile(safePath(file), 'utf-8');
     } catch {
       sources[file] = '// file not found';
     }
   }
 
+  return sources;
+}
+
+async function analyzeCode(onStep) {
+  const client = getAnthropicClient();
+  const sources = await readSourceFiles(onStep);
   const combined = Object.entries(sources)
-    .map(([f, c]) => `// ===== ${f} =====\n${c}`)
+    .map(([file, content]) => `// ===== ${file} =====\n${content}`)
     .join('\n\n');
 
   onStep('Analyzuji kvalitu kódu...');
@@ -48,16 +130,13 @@ async function analyzeCode(onStep) {
   const res = await client.messages.create({
     model: MODEL,
     max_tokens: 2048,
-    system: `You are a senior software engineer doing a code review of an AI agent system.
-Find real, concrete improvements. Focus on: error handling, code duplication, performance, maintainability.
-Return JSON only: { "score": 1-10, "issues": [{ "file": "...", "line_hint": "...", "severity": "low|medium|high", "description": "...", "fix": "..." }] }`,
-    messages: [{
-      role: 'user',
-      content: `Analyze this AI agent codebase:\n\n${combined.slice(0, 12000)}`,
-    }],
+    system: `You are a senior software engineer reviewing an AI agent codebase.
+Find concrete improvements. Focus on security, error handling, maintainability, tests, and safe automation.
+Return JSON only: { "score": 1-10, "issues": [{ "file": "...", "severity": "low|medium|high", "description": "...", "fix": "..." }] }`,
+    messages: [{ role: 'user', content: `Analyze this codebase:\n\n${combined.slice(0, 14000)}` }],
   });
 
-  const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  const text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
   try {
     return JSON.parse(text.replace(/```json|```/g, '').trim());
   } catch {
@@ -65,142 +144,161 @@ Return JSON only: { "score": 1-10, "issues": [{ "file": "...", "line_hint": "...
   }
 }
 
-// ─── Step 2: Generate Improvements ───────────────────────────────────────────
-
 async function generateFixes(analysis, onStep) {
-  const highPriority = analysis.issues.filter(i => i.severity === 'high' || i.severity === 'medium');
-  if (!highPriority.length) {
+  const client = getAnthropicClient();
+  const issues = analysis.issues.filter((i) => i.severity === 'high' || i.severity === 'medium');
+
+  if (!issues.length) {
     onStep('Žádné kritické problémy nenalezeny.');
     return [];
   }
 
-  onStep(`Generuji opravy pro ${highPriority.length} problémů...`);
-
+  onStep(`Generuji opravy pro ${Math.min(issues.length, 3)} problémů...`);
   const fixes = [];
-  for (const issue of highPriority.slice(0, 3)) { // max 3 fixes per run
-    const filePath = path.join(WORKDIR, issue.file);
+
+  for (const issue of issues.slice(0, 3)) {
+    if (!AGENT_FILES.includes(issue.file)) {
+      onStep(`Přeskakuji nepovolený soubor: ${issue.file}`);
+      continue;
+    }
+
     let original = '';
     try {
-      original = await fs.readFile(filePath, 'utf-8');
+      original = await fs.readFile(safePath(issue.file), 'utf-8');
     } catch {
       continue;
     }
 
     const res = await client.messages.create({
       model: MODEL,
-      max_tokens: 3000,
-      system: `You are refactoring agent code. Return ONLY the complete improved file content — no explanation, no markdown fences.`,
-      messages: [{
-        role: 'user',
-        content: `Fix this issue in ${issue.file}:\n\nProblem: ${issue.description}\nSuggested fix: ${issue.fix}\n\nCurrent file:\n${original}`,
-      }],
+      max_tokens: 6000,
+      system: 'Return only the complete improved file content. No markdown fences. No explanation.',
+      messages: [{ role: 'user', content: `Fix this issue in ${issue.file}:\n${issue.description}\nSuggested fix: ${issue.fix}\n\nCurrent file:\n${original}` }],
     });
 
-    const improved = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
-    fixes.push({ file: issue.file, original, improved, issue });
+    const improved = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+    if (!improved || improved.length < 50 || improved === original) {
+      onStep(`Přeskakuji prázdnou nebo stejnou opravu: ${issue.file}`);
+      continue;
+    }
+
+    fixes.push({ file: issue.file, original, improved });
   }
 
   return fixes;
 }
 
-// ─── Step 3: Test ─────────────────────────────────────────────────────────────
-
 async function runTests(onStep) {
   onStep('Spouštím testy...');
 
-  // Try common test runners
-  const testCommands = [
-    'npm test --if-present',
-    'node -e "require(\'./meta-agent\')" 2>&1',
-    'node -e "require(\'./sub-agents/executor\')" 2>&1',
+  const commands = [
+    'npm run check --if-present',
+    'node --check router.js',
+    'node --check meta-agent-v2.js',
+    'node --check sub-agents/executor.js',
+    'node --check sub-agents/memory.js',
+    'node --check sub-agents/self-improve.js',
+    'node --check sub-agents/git-workspace.js',
+    'node --check sub-agents/auto-worker.js',
   ];
 
   const results = [];
-  for (const cmd of testCommands) {
+  for (const cmd of commands) {
     try {
-      const { stdout, stderr } = await execAsync(cmd, { cwd: WORKDIR, timeout: 20000 });
+      const { stdout, stderr } = await execAsync(cmd, { cwd: WORKDIR, timeout: 30000 });
       results.push({ cmd, ok: true, output: (stdout + stderr).trim().slice(0, 500) });
     } catch (err) {
-      results.push({ cmd, ok: false, error: err.message.slice(0, 300) });
+      results.push({ cmd, ok: false, error: (err.stderr || err.message || '').slice(0, 900) });
     }
   }
 
-  const passed = results.filter(r => r.ok).length;
-  onStep(`Testy: ${passed}/${results.length} prošlo`);
+  onStep(`Testy: ${results.filter((r) => r.ok).length}/${results.length} prošlo`);
   return results;
 }
 
-// ─── Step 4: Apply + Commit ───────────────────────────────────────────────────
-
-async function applyAndCommit(fixes, testResults, onStep) {
-  if (!fixes.length) {
-    onStep('Žádné opravy k aplikování.');
-    return 'Kód je v pořádku — žádné změny nebyly nutné.';
-  }
-
-  // Only apply if tests didn't catastrophically fail
-  const criticalFailures = testResults.filter(r => !r.ok && r.cmd.includes('require'));
-  if (criticalFailures.length > 1) {
-    return '⚠️ Příliš mnoho test failures před aplikováním změn — přeskočeno pro bezpečnost.';
-  }
-
-  onStep('Aplikuji opravy...');
-  const appliedFiles = [];
+async function applyFixes(fixes, onStep) {
+  const applied = [];
 
   for (const fix of fixes) {
-    const fullPath = path.join(WORKDIR, fix.file);
-    // Backup original
-    await fs.writeFile(`${fullPath}.bak`, fix.original, 'utf-8');
-    // Apply improvement
-    await fs.writeFile(fullPath, fix.improved, 'utf-8');
-    appliedFiles.push(fix.file);
-    onStep(`✅ Opraveno: ${fix.file}`);
+    const filePath = safePath(fix.file);
+    await fs.writeFile(`${filePath}.bak`, fix.original, 'utf-8');
+    await fs.writeFile(filePath, fix.improved, 'utf-8');
+    applied.push(fix.file);
+    onStep(`✅ Opraveno lokálně: ${fix.file}`);
   }
 
-  // Git commit
-  onStep('Commituju změny do GitHubu...');
-  const commitMsg = `🤖 self-improve: ${appliedFiles.join(', ')} (auto-refactor)`;
+  return applied;
+}
 
-  try {
-    await execAsync(`git -C "${WORKDIR}" remote set-url origin https://${process.env.GIT_TOKEN}@github.com/${process.env.GITHUB_USERNAME}/openclaw-agent.git`, {});
-    await execAsync(`git -C "${WORKDIR}" add ${appliedFiles.map(f => `"${f}"`).join(' ')}`, {});
-    await execAsync(`git -C "${WORKDIR}" commit -m "${commitMsg}"`, {});
-
-    const pushCmd = `git -C "${WORKDIR}" push origin ${process.env.GIT_BRANCH || 'main'}`;
-    await execAsync(pushCmd, {});
-
-    onStep('📦 Pushnuté na GitHub!');
-    return `✅ Self-improve dokončen:\n• Opravené soubory: ${appliedFiles.join(', ')}\n• Commit: "${commitMsg}"\n• Pushnuté na GitHub`;
-  } catch (err) {
-    onStep(`⚠️ Git chyba: ${err.message}`);
-    return `⚠️ Soubory opraveny lokálně, ale git push selhal: ${err.message}`;
+async function revertFixes(fixes, onStep) {
+  for (const fix of fixes) {
+    await fs.writeFile(safePath(fix.file), fix.original, 'utf-8');
+    onStep(`↩️ Vráceno zpět: ${fix.file}`);
   }
 }
 
-// ─── Main Export ──────────────────────────────────────────────────────────────
+async function commitAndPush(files, onStep) {
+  if (!(await isGitRepo())) return explainGitSetup();
+
+  if (!process.env.GIT_TOKEN && !process.env.GIT_REMOTE_URL) {
+    return [
+      '⚠️ Změny jsou lokálně hotové, ale push přeskočen.',
+      'Důvod: chybí GIT_TOKEN nebo GIT_REMOTE_URL v Railway Variables.',
+      'Doporučení: nastav GIT_TOKEN s oprávněním Contents: Read and write a spusť /git setup.',
+    ].join('\n');
+  }
+
+  await runGit(['config', 'user.email', 'martybot@users.noreply.github.com']);
+  await runGit(['config', 'user.name', 'Martybot']);
+
+  if (process.env.GIT_REMOTE_URL) {
+    onStep('Nastavuji git remote z Railway Variables...');
+    await runGit(['remote', 'set-url', 'origin', process.env.GIT_REMOTE_URL]);
+  } else {
+    const repo = process.env.GITHUB_REPO || 'Martyparty1988/openclaw-agent-v2';
+    await runGit(['remote', 'set-url', 'origin', `https://github.com/${repo}.git`]);
+  }
+
+  onStep('Commituju změny...');
+  await runGit(['add', ...files]);
+  const status = await runGit(['status', '--porcelain']);
+  if (!status.stdout.trim()) return 'ℹ️ Není co commitnout.';
+
+  const msg = `self-improve: update ${files.join(', ')}`;
+  await runGit(['commit', '-m', msg]);
+
+  onStep('Pushuju změny na GitHub...');
+  await runGit(['push', 'origin', process.env.GIT_BRANCH || 'main'], 120000);
+  return `✅ Pushnuté na GitHub. Commit: ${msg}`;
+}
 
 class SelfImprove {
   async run(onStep = () => {}) {
-    onStep('🧬 Spouštím self-improve cyklus...');
+    onStep('🧬 Spouštím bezpečný self-improve cyklus...');
 
-    // 1. Analyze
     const analysis = await analyzeCode(onStep);
     onStep(`📊 Skóre kódu: ${analysis.score}/10 | Nalezeno: ${analysis.issues.length} problémů`);
 
-    if (analysis.score >= 9) {
-      return `✅ Kód je vynikající (${analysis.score}/10). Žádné změny nebyly nutné.`;
+    if (analysis.score >= 9) return `✅ Kód je výborný (${analysis.score}/10). Žádné změny nebyly nutné.`;
+
+    const fixes = await generateFixes(analysis, onStep);
+    if (!fixes.length) return 'ℹ️ Nebyly vygenerovány žádné bezpečné opravy.';
+
+    const applied = await applyFixes(fixes, onStep);
+    const tests = await runTests(onStep);
+    const failed = tests.filter((r) => !r.ok);
+
+    if (failed.length) {
+      await revertFixes(fixes, onStep);
+      return `❌ Testy po změnách selhaly. Změny byly vráceny zpět.\n\n${failed.map((r) => `• ${r.cmd}: ${r.error}`).join('\n')}`;
     }
 
-    // 2. Generate fixes
-    const fixes = await generateFixes(analysis, onStep);
-
-    // 3. Test current state
-    const testResults = await runTests(onStep);
-
-    // 4. Apply + commit
-    const result = await applyAndCommit(fixes, testResults, onStep);
-
-    return result;
+    try {
+      const gitResult = await commitAndPush(applied, onStep);
+      return `✅ Self-improve dokončen.\n• Opraveno: ${applied.join(', ')}\n\n${gitResult}`;
+    } catch (err) {
+      return `⚠️ Opravy proběhly, ale git push selhal: ${err.message}`;
+    }
   }
 }
 
